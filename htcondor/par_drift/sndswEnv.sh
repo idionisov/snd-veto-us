@@ -45,8 +45,7 @@ export PYTHIA8="${CVMFS_SW}/pythia/sndsw-pythia8309-local1"
 export PYTHIA8DATA="${CVMFS_SW}/pythia/sndsw-pythia8309-local1/share/Pythia8/xmldoc"
 export PYTHIA_ROOT="${CVMFS_SW}/pythia/sndsw-pythia8309-local1"
 
-# 2. ddfUtils setup
-- Draw/Save
+# 2. ddfUtils setup - Draw/Save
 if [ -d "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" ]; then
     export ddfUtils="$(cd "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" && pwd)"
 elif [ -n "${DDFUTILS}" ] && [ -d "${DDFUTILS}" ]; then

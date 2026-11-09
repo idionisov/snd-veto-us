@@ -13,7 +13,7 @@
 
 set -eo pipefail
 
-RUN="${1:-5999}"
+RUN="${1:-5408}"
 TOTAL_EVENTS="${2:-2000000}"
 N_JOBS="${3:-10}"
 OUT_DIR="${4:-/eos/user/i/idioniso/Timing/run$(printf "%06d" "${RUN}")}"
@@ -26,6 +26,8 @@ CSCINT_FILE="${OUT_DIR}/run${RUN_STR}_cscintvalues.json"
 CSCINT_RAW="${OUT_DIR}/raw_cscint_histograms.root"
 MERGED_ROOT="${OUT_DIR}/merged_raw_histograms.root"
 PARALLEL_DIR="${OUT_DIR}/parallel_parts"
+
+source /afs/cern.ch/work/i/idioniso/snd-veto-us/sndswEnv.sh
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 if [ -f "${SCRIPT_DIR}/run_TimeWalk.py" ]; then
