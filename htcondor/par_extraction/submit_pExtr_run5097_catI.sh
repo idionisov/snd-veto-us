@@ -137,7 +137,7 @@ fi
 # MERGE Execution (if requested)
 # ------------------------------------------------------------------------------
 if [ "${DO_MERGE}" = "1" ]; then
-    "${SCRIPT_DIR}/merge_and_fit.sh" --merge
+    "${SCRIPT_DIR}/merge_and_fit.sh" -r "${RUN}" --merge
     exit 0
 fi
 
@@ -145,7 +145,7 @@ fi
 # FIT Execution (if requested)
 # ------------------------------------------------------------------------------
 if [ "${DO_FIT}" = "1" ]; then
-    "${SCRIPT_DIR}/merge_and_fit.sh" --fit
+    "${SCRIPT_DIR}/merge_and_fit.sh" -r "${RUN}" --fit
     exit 0
 fi
 

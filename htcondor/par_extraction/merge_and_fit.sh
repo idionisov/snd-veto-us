@@ -10,32 +10,41 @@ set -eo pipefail
 #   ./merge_and_fit.sh --fit       # Only fit already-merged histograms
 # ==============================================================================
 
-RUN="${1:-5999}"
-if [ "${RUN}" = "--merge" ] || [ "${RUN}" = "--fit" ] || [ "${RUN}" = "--help" ] || [ "${RUN}" = "-h" ]; then
-    RUN="5999"
-fi
-RUN_STR=$(printf "%06d" "${RUN}")
-OUT_DIR="/eos/user/i/idioniso/Timing/run${RUN_STR}"
-REFERENCESYSTEM="0"
-CSCINT_FILE="${OUT_DIR}/run${RUN_STR}_cscintvalues.json"
-CSCINT_RAW="${OUT_DIR}/raw_cscint_histograms.root"
-MERGED_ROOT="${OUT_DIR}/merged_raw_histograms.root"
-PARALLEL_DIR="${OUT_DIR}/parallel_parts"
-N_EXPECTED=250
-
+# Default run is 5999, but accept -r/--run or positional run number
+RUN="5999"
 DO_MERGE=1
 DO_FIT=1
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -r|--run)
+            RUN="$2"
+            shift 2
+            ;;
         --merge)
             DO_FIT=0
+            shift
             ;;
         --fit)
             DO_MERGE=0
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [-r|--run <run_number>] [--merge] [--fit]"
+            exit 0
+            ;;
+        *)
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                RUN="$1"
+                shift
+            else
+                shift
+            fi
             ;;
     esac
 done
+
+RUN_STR=$(printf "%06d" "${RUN}")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${SCRIPT_DIR}/sndswEnv.sh" ]; then
