@@ -45,6 +45,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 RUN_STR=$(printf "%06d" "${RUN}")
+OUT_DIR="${OUT_DIR:-/eos/user/i/idioniso/Timing/run${RUN_STR}}"
+PARALLEL_DIR="${PARALLEL_DIR:-${OUT_DIR}/parallel_parts}"
+MERGED_ROOT="${MERGED_ROOT:-${OUT_DIR}/merged_raw_histograms.root}"
+CSCINT_FILE="${CSCINT_FILE:-${OUT_DIR}/run${RUN_STR}_cscintvalues.json}"
+CSCINT_RAW="${CSCINT_RAW:-${OUT_DIR}/raw_cscint_histograms.root}"
+N_EXPECTED="${N_EXPECTED:-250}"
+REFERENCESYSTEM="${REFERENCESYSTEM:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${SCRIPT_DIR}/sndswEnv.sh" ]; then
