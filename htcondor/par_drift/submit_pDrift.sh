@@ -22,10 +22,11 @@ DEFAULT_CAT1="${SCRIPT_DIR}/args_run_catI.txt"
 DEFAULT_CAT2="${SCRIPT_DIR}/args_run_catII.txt"
 ARGS_FILE="${DEFAULT_CAT1}"
 TMP_ARGS=""
-FLAVOUR="workday"
+FLAVOUR="testmatch"
 FORCE="0"
 DRY_RUN="0"
-N_EVENTS="5000000"
+N_EVENTS="10000000"
+SPEED_EVENTS="10000000"
 OUT_BASE="/eos/user/i/idioniso/Timing"
 REFERENCESYSTEM="0"
 CAT_LABEL="Category I"
@@ -132,6 +133,7 @@ condor_submit par_drift.sub \
     flavour="${FLAVOUR}" \
     force="${FORCE}" \
     n_events="${N_EVENTS}" \
+    speed_events="${SPEED_EVENTS}" \
     out_base="${OUT_BASE}" \
     ref_sys="${REFERENCESYSTEM}"
 

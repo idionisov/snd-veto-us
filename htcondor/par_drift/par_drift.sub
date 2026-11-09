@@ -9,14 +9,15 @@
 base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/par_drift
 initialdir              = $(base_dir)
 
-flavour                 = $(flavour:workday)
+flavour                 = $(flavour:testmatch)
 args_file               = $(args_file:$(base_dir)/args_run_catI.txt)
-n_events                = $(n_events:5000000)
+n_events                = $(n_events:10000000)
 out_base                = $(out_base:/eos/user/i/idioniso/Timing)
 ref_sys                 = $(ref_sys:0)
+speed_events            = $(speed_events:$(n_events))
 
 executable              = $(base_dir)/run_TimeWalk_drift_worker.sh
-arguments               = $(run) $(n_events) $(out_base) $(ref_sys)
+arguments               = $(run) $(n_events) $(out_base) $(ref_sys) $(speed_events)
 environment             = "FORCE=$(force:0)"
 
 output                  = $(base_dir)/out/tw_run$(run)_$(ClusterId)_$(ProcId).out

@@ -6,9 +6,10 @@ set -eo pipefail
 #
 # Arguments:
 #   $1: RUN             (Run number)
-#   $2: N_EVENTS        (Number of events, default: 5000000)
+#   $2: N_EVENTS        (Number of events for TimeWalk fit, default: 10000000)
 #   $3: OUT_BASE        (Base output directory, default: /eos/user/i/idioniso/Timing)
 #   $4: REFERENCESYSTEM (Reference system, default: 0 for both DS + SciFi)
+#   $5: SPEED_EVENTS    (Number of events for c_scint extraction, default: 10000000)
 # ==============================================================================
 
 RUN="${1}"
@@ -17,9 +18,10 @@ if [ -z "${RUN}" ]; then
     exit 1
 fi
 
-N_EVENTS="${2:-5000000}"
+N_EVENTS="${2:-10000000}"
 OUT_BASE="${3:-/eos/user/i/idioniso/Timing}"
 REFERENCESYSTEM="${4:-0}"
+SPEED_EVENTS="${5:-${N_EVENTS}}"
 
 RUN_STR=$(printf "%06d" "${RUN}")
 OUT_DIR="${OUT_BASE}/run${RUN_STR}"
@@ -86,7 +88,7 @@ python3 -X faulthandler "${PY_RUN}" \
     -r "${RUN}" \
     -s 0 \
     -n "${N_EVENTS}" \
-    --speedEvents 1000000 \
+    --speedEvents "${SPEED_EVENTS}" \
     --referencesystem "${REFERENCESYSTEM}" \
     -o "${SCRATCH_DIR}"
 
