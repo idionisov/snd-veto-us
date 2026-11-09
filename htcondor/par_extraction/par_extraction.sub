@@ -10,7 +10,7 @@
 #   ./submit_pExtr.sh
 # ==============================================================================
 
-base_dir                = /afs/cern.ch/work/i/idioniso/sndVetoUS/htcondor/par_extraction
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/par_extraction
 initialdir              = $(base_dir)
 
 flavour                 = $(flavour:workday)
