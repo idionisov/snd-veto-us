@@ -1,0 +1,9 @@
+{ decls }
+namespace snd {  }
+
+[ libsnd_analysis.so ]
+# List of selected classes
+class snd::DataManager
+header DataManager.h
+# List of selected namespaces
+namespace snd

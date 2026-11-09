@@ -1,0 +1,39 @@
+Hope you're doing well! Maybe even taking some vacations in August?! There is one leftover thing to do regarding work: pass on your work on the Veto/US/DS timewalk and alignment. For that, could we arrange for a meeting in the next weeks to see with branch shall be used, how to run stuff etc?
+
+
+Happy to have a meeting and go over the work. Let me see how I get on this weekend with a few small tasks of getting some files in order. Then there are a load of helper functions that will at least let you see the structure of the files. 
+The thesis is available at this link: https://edoc.hu-berlin.de/items/14500a1f-9af8-42f5-a94b-64d9082efb47
+
+I'll set-out below what my summary is regarding the alignment
+
+Timewalk: the timewalk correction is applied just to the US system, I'll get these files in order before we meet to streamline passing over the work. In the thesis section 4.1.4 you can see how the time-walk correction is done and in section 4.3.4 you can see how I measure an systematic error-floor (you haven't seen that specific bit of work before Simona)
+
+Alignment: following the timewalk correction, the SiPMs can be aligned to either my DS reference time (in the case of physics with a final-state muon) or the SciFi reference time (in the case of physics such as the zero-muon final state neutrino interactions). The alignment parameters are another set of files I'll make sure are in the right place. 
+
+The application of the alignment parameter and the subsequent scintillator-side and full scintillator timing measurements shown in thesis sections 4.1.7 and 4.1.8. A deeper look into quality checking the alignment parameters and the resulting timing measurements is shown in sections 4.3.5 and 4.3.6. 
+
+
+---------------------------------------------------
+
+Got all the files in my afs public: /afs/cern.ch/user/a/aconsnd/public 
+The filenames are f'run{str(runNr).zfill(6)}_twparams.json', f'run{str(runNr).zfill(6)}_alignmentparamsDS.json'
+
+The methods for how to apply the timewalk correction and alignment params are in this file: https://github.com/AConaboy/sndsw/blob/master/python/AnalysisFunctions.py. The timewalk correction parameters are not run dependent so you only need one of those files. The parameters are stored in the file as [t_0, alpha, beta, QDC_0, gamma] and are applied using function 4.1.9 in my thesis. Simona: I managed to get a better TW description post working with SND, the function changed a little, and in thesis section 4.3.4 I do a min NLL optimisation to find an error-floor.  
+
+The experiment needs three different sets of fine alignment parameters depending on the run number, the conditions for which alignment parameters to apply are in table 3.6 of my thesis. Also, I've just put the DS alignment parameters in the public folder at the moment. These parameters align the US muon system SiPMs with the DS muon system. I also have parameters to align the US with the SF timing which I will put into the public directory soon. Will you need these soon? 
+
+These alignment parameters are measured such that they align a US SiPM with my 'DS reference time' which is defined in equation 4.1.1. The function for measuring this time is here and determined in the code block: ```if mode=='tds0'```.
+
+There are also the effective signal speeds, the effective signal speed doesn't change much throughout runs (see section 4.3.2 of my thesis) so in I've put in public/ the file public/run005999_cscintvalues.json which contain: [the effective signal speed, the uncertainty from the fit, the systematic uncertainty] the last of which I describe in that section of my thesis. Simona that systematic will be unseen by you I believe. The effective signal speed is used with the extrapolated DS track position to account for the signal photon time-of-flight in the scintillator to the SiPM. The code for correcting for this time-of-flight is here but there are a few steps that go into that. 
+
+If you clone my fork here.  The following won't work out the box without changing some file paths etc. from mine to yours, but it's a good indication of how the code is run:
+python -i $SNDSW_ROOT/shipLHC/scripts/run_TimeWalk.py -p $1 -r $2 -s $3 -n $4 --m $mode --XT --referencesystem $referencesystem
+Where 
+1=/eos/experiment/sndlhc/convertedData/physics/2023/ - path to the offline format data
+2=5999 - run number
+3=0 - start event number
+4=10000 - number of events
+mode=systemalignment - the analysis mode
+referencesystem=3 - 3 for the DS reference time, 1 for the SF reference time, so the code knows what alignment params to use.
+
+Maybe when we meet we can try to get things altered so that code works, I think a lot of it will just be file paths so you could try do that but there might be a tricky couple of issues that I can help with, I'm not sure.

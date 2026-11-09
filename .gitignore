@@ -1,0 +1,96 @@
+# ==============================================================================
+# .gitignore for sndVetoUS
+# ==============================================================================
+
+# ---------------------
+# CMake & Build Artifacts
+# ---------------------
+build/
+build*/
+cmake-build*/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+*.d
+
+# ---------------------
+# Compiled Objects & Libraries
+# ---------------------
+*.o
+*.obj
+*.so
+*.so.*
+*.dylib
+*.a
+*.la
+*.lib
+*.dll
+
+# ---------------------
+# ROOT & C++ Dictionaries
+# ---------------------
+*.pcm
+*.rootmap
+dict*.[ch]*
+*_dict*.[ch]*
+G__*.*
+
+# ---------------------
+# ROOT Data Files & Large Outputs
+# ---------------------
+*.root
+# Whitelist reference documents if tracked
+!documents/*.root
+
+# ---------------------
+# Python & Virtual Environments
+# ---------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.venv/
+venv/
+env/
+.env
+
+# ---------------------
+# Jupyter Notebooks
+# ---------------------
+.ipynb_checkpoints/
+
+# ---------------------
+# HTCondor Execution Logs & Temporary Files
+# ---------------------
+htcondor/**/out/
+htcondor/**/err/
+htcondor/**/log/
+*.log
+*.err
+*.out
+*.tmp
+*.tmp*
+
+# ---------------------
+# Editors, OS & IDE Metadata
+# ---------------------
+.DS_Store
+.idea/
+.vscode/
+.zed/
+*.code-workspace
+.cache/
+.clangd/
+clangd/
+*.swp
+*.swo
+*~
+.~lock.*#
+
+# ---------------------
+# Temporary Figures & Plots
+# ---------------------
+alignment_plots/
