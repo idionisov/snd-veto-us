@@ -48,7 +48,7 @@ export PYTHIA_ROOT="${CVMFS_SW}/pythia/sndsw-pythia8309-local1"
 # 2. ddfUtils setup - Draw/Save
 if [ -d "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" ]; then
     export ddfUtils="$(cd "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" && pwd)"
-elif [ -n "${DDFUTILS}" ] && [ -d "${DDFUTILS}" ]; then
+elif [ -n "${DDFUTILS:-}" ] && [ -d "${DDFUTILS:-}" ]; then
     export ddfUtils="${DDFUTILS}"
 else
     export ddfUtils="/afs/cern.ch/user/i/idioniso/ddfUtils"
@@ -131,6 +131,7 @@ ${ROOT_INCLUDE_PATH+:$ROOT_INCLUDE_PATH}"
 # 5. Full Executable PATH
 export PATH="${USER_SNDSW_BUILD}/bin:\
 ${CVMFS_SW}/sndsw/master-local1/bin:\
+${CVMFS_SW}/XRootD/v5.7.3-local1/bin:\
 ${CVMFS_SW}/ROOT/v6-36-04-alice1-local1/bin:\
 ${CVMFS_SW}/GENIE/v3.2.0-local1/bin:\
 ${CVMFS_SW}/FairRoot/v19.0.0-local1/bin:\
@@ -138,11 +139,11 @@ ${CVMFS_SW}/Python-modules/1.0-local1/bin:\
 ${PATH}"
 
 # 6. PYTHONPATH
-# Prioritize target build release python modules, followed by custom scripts, ddfUtils, etc.
-export PYTHONPATH="${USER_SNDSW_BUILD}/python:\
-${USER_SNDSW_BUILD}/shipLHC/scripts:\
+# Prioritize target source python modules and scripts, followed by build release, custom scripts, ddfUtils, etc.
+export PYTHONPATH="${USER_SNDSW_SRC}/shipLHC/scripts:\
 ${USER_SNDSW_SRC}/python:\
-${USER_SNDSW_SRC}/shipLHC/scripts:\
+${USER_SNDSW_BUILD}/shipLHC/scripts:\
+${USER_SNDSW_BUILD}/python:\
 ${ddfUtils}:\
 ${CVMFS_SW}/ROOT/v6-36-04-alice1-local1/lib:\
 ${CVMFS_SW}/XRootD/v5.7.3-local1/lib/python/site-packages:\
