@@ -11,6 +11,7 @@ N_EVENTS_STAGE2=${3:-5000000}
 N_THREADS=${4:-10}
 OUT_BASE=${5:-"/eos/user/i/idioniso/Timing"}
 
+RUN_FORMATTED=$(printf "%06d" "${RUN}")
 SNDSW_DIR="/afs/cern.ch/user/i/idioniso/snd_master/sndsw"
 PY_SCRIPT="${SNDSW_DIR}/shipLHC/scripts/run_TimeWalk.py"
 OUT_DIR="${OUT_BASE}/run${RUN}"
@@ -48,9 +49,13 @@ hadd -f -k "${STAGE1_MERGED}" "${PART_DIR}"/stage1_part_*/raw_*.root > /dev/null
 echo "Fitting Stage 1 merged histograms to extract cscint..."
 python3 -X faulthandler "${PY_SCRIPT}" -r "${RUN}" --fitSpeedOnly --fitOnly "${STAGE1_MERGED}" -o "${OUT_DIR}"
 
-CSCINT_JSON="${OUT_DIR}/run${RUN}_cscintvalues.json"
+CSCINT_JSON="${OUT_DIR}/run${RUN_FORMATTED}_cscintvalues.json"
 if [ ! -f "${CSCINT_JSON}" ]; then
-    echo "ERROR: ${CSCINT_JSON} was not generated!" >&2
+    CSCINT_JSON="${OUT_DIR}/run${RUN}_cscintvalues.json"
+fi
+
+if [ ! -f "${CSCINT_JSON}" ]; then
+    echo "ERROR: cscint JSON was not generated at expected locations!" >&2
     exit 1
 fi
 echo "=== Stage 1 complete. Extracted: ${CSCINT_JSON} ==="
@@ -84,5 +89,10 @@ hadd -f -k "${STAGE2_MERGED}" "${PART_DIR}"/stage2_part_*/raw_*.root > /dev/null
 echo "Fitting Stage 2 merged histograms to extract timewalk + alignment parameters..."
 python3 -X faulthandler "${PY_SCRIPT}" -r "${RUN}" --cscintFile "${CSCINT_JSON}" --fitOnly "${STAGE2_MERGED}" -o "${OUT_DIR}"
 
+CALIB_JSON="${OUT_DIR}/run${RUN_FORMATTED}_timing_calibration.json"
+if [ ! -f "${CALIB_JSON}" ]; then
+    CALIB_JSON="${OUT_DIR}/run${RUN}_timing_calibration.json"
+fi
+
 echo "=== Pipeline completed successfully for Run ${RUN} ==="
-echo "Final calibration output: ${OUT_DIR}/run${RUN}_timing_calibration.json"
+echo "Final calibration output: ${CALIB_JSON}"
