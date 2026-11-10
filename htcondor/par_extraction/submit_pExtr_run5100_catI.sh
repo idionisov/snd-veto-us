@@ -31,6 +31,7 @@ FLAVOUR="workday"
 FORCE="0"
 DRY_RUN="0"
 DO_STEP1="0"
+DO_STAGE1_SPEED="0"
 DO_MERGE="0"
 DO_FIT="0"
 POSITIONAL=()
@@ -61,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN="1"
+      shift
+      ;;
+    --stage1-speed)
+      DO_STAGE1_SPEED="1"
       shift
       ;;
     --step1)
@@ -152,10 +157,10 @@ fi
 # ------------------------------------------------------------------------------
 # Check for c_scint speed calibration file before batch submission
 # ------------------------------------------------------------------------------
-if [ ! -f "${CSCINT_FILE}" ]; then
+if [ "${DO_STAGE1_SPEED}" != "1" ] && [ ! -f "${CSCINT_FILE}" ]; then
     echo "[WARNING] Precomputed c_scint file not found: ${CSCINT_FILE}"
-    echo "It is recommended to run Step 1 once beforehand using:"
-    echo "  ./submit_pExtr.sh --step1"
+    echo "It is recommended to run Stage 1 (c_scint extraction) first with:"
+    echo "  ./submit_pExtr_run5100_catI.sh --stage1-speed"
     echo ""
     if [ "${DRY_RUN}" != "1" ] && [ -t 0 ]; then
         read -p "Do you want to proceed with batch submission anyway? [y/N] " -n 1 -r
@@ -167,11 +172,19 @@ if [ ! -f "${CSCINT_FILE}" ]; then
     fi
 fi
 
+STAGE_FLAG="full"
+STAGE_LABEL="Time-Walk & Alignment Calibration"
+if [ "${DO_STAGE1_SPEED}" = "1" ]; then
+    STAGE_FLAG="speed"
+    STAGE_LABEL="Stage-1: Full-Statistics c_scint Extraction"
+fi
+
 TOTAL_JOBS=$(wc -l < "${ARGS_FILE}")
 echo "=========================================================="
-echo " Submitting TimeWalk Calibration (${TOTAL_JOBS} Jobs) to HTCondor"
+echo " Submitting ${STAGE_LABEL} (${TOTAL_JOBS} Jobs) to HTCondor"
 echo " Run Number     : ${RUN}"
 echo " Total Jobs     : ${TOTAL_JOBS}"
+echo " Stage Mode     : ${STAGE_FLAG}"
 echo " Job Flavour    : ${FLAVOUR}"
 echo " Force Mode     : ${FORCE}"
 echo " Output Dir     : ${OUT_DIR}"
@@ -180,7 +193,7 @@ echo "=========================================================="
 
 if [ "${DRY_RUN}" = "1" ]; then
     echo "[Dry-Run Mode] Command that would be executed:"
-    echo "condor_submit par_extraction.sub args_file=\"${ARGS_FILE}\" flavour=\"${FLAVOUR}\" force=\"${FORCE}\" run=\"${RUN}\" out_dir=\"${OUT_DIR}\" ref_sys=\"${REFERENCESYSTEM}\""
+    echo "condor_submit par_extraction.sub args_file=\"${ARGS_FILE}\" flavour=\"${FLAVOUR}\" force=\"${FORCE}\" run=\"${RUN}\" out_dir=\"${OUT_DIR}\" ref_sys=\"${REFERENCESYSTEM}\" stage_mode=\"${STAGE_FLAG}\""
     exit 0
 fi
 
@@ -196,7 +209,8 @@ condor_submit par_extraction.sub \
     force="${FORCE}" \
     run="${RUN}" \
     out_dir="${OUT_DIR}" \
-    ref_sys="${REFERENCESYSTEM}"
+    ref_sys="${REFERENCESYSTEM}" \
+    stage_mode="${STAGE_FLAG}"
 
 echo ""
 echo "Jobs submitted! You can monitor them using:"

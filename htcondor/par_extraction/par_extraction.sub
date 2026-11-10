@@ -19,9 +19,10 @@ args_file               = $(args_file:$(base_dir)/args_run5999_250jobs.txt)
 run                     = $(run:5999)
 out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/run005999)
 ref_sys                 = $(ref_sys:0)
+stage_mode              = $(stage_mode:full)
 
 executable              = $(base_dir)/run_TimeWalk_worker.sh
-arguments               = $(job_id) $(start) $(n_events) $(run) $(out_dir) $(ref_sys)
+arguments               = $(job_id) $(start) $(n_events) $(run) $(out_dir) $(ref_sys) $(stage_mode)
 environment             = "FORCE=$(force:0)"
 
 output                  = $(base_dir)/out/tw_part$(job_id)_$(ClusterId)_$(ProcId).out

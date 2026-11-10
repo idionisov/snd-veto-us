@@ -11,6 +11,7 @@ set -eo pipefail
 #   $4: RUN             (Default: 5999)
 #   $5: OUT_DIR         (Default: /eos/user/i/idioniso/Timing/run005999)
 #   $6: REFERENCESYSTEM (Default: 0 for both DS + SciFi)
+#   $7: MODE_FLAG       (Optional: "speed" for stage-1 c_scint accumulation)
 # ==============================================================================
 
 JOB_ID="${1:-0}"
@@ -20,11 +21,17 @@ RUN="${4:-5999}"
 RUN_STR=$(printf "%06d" "${RUN}")
 OUT_DIR="${5:-/eos/user/i/idioniso/Timing/run${RUN_STR}}"
 REFERENCESYSTEM="${6:-0}"
+STAGE_MODE="${7:-full}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARALLEL_DIR="${OUT_DIR}/parallel_parts"
-PART_DIR="${PARALLEL_DIR}/part_${JOB_ID}"
-TARGET_FILE="${PART_DIR}/raw_histograms_${START}.root"
+if [ "${STAGE_MODE}" = "speed" ]; then
+    PART_DIR="${PARALLEL_DIR}/speed_part_${JOB_ID}"
+    TARGET_FILE="${PART_DIR}/raw_cscint_${START}.root"
+else
+    PART_DIR="${PARALLEL_DIR}/part_${JOB_ID}"
+    TARGET_FILE="${PART_DIR}/raw_histograms_${START}.root"
+fi
 
 echo "======================================================================"
 echo " HTCondor TimeWalk Worker - Job ${JOB_ID}"
@@ -89,20 +96,31 @@ trap 'rm -rf "${SCRATCH_DIR}"' EXIT
 
 echo " ~ Running run_TimeWalk.py in local scratch: ${SCRATCH_DIR}"
 
-python3 -X faulthandler "${PY_RUN}" \
-    -r "${RUN}" \
-    -s "${START}" \
-    -n "${N_EVENTS}" \
-    ${CSCINT_OPT} \
-    --referencesystem "${REFERENCESYSTEM}" \
-    --fillOnly \
-    -o "${SCRATCH_DIR}"
+if [ "${STAGE_MODE}" = "speed" ]; then
+    python3 -X faulthandler "${PY_RUN}" \
+        -r "${RUN}" \
+        -s "${START}" \
+        -n "${N_EVENTS}" \
+        --speedEvents "${N_EVENTS}" \
+        --referencesystem "${REFERENCESYSTEM}" \
+        --speedOnly \
+        -o "${SCRATCH_DIR}"
+    PROD_FILE=$(find "${SCRATCH_DIR}" -name "raw_cscint_histograms.root" -o -name "raw_histograms_*.root" | head -n 1)
+else
+    python3 -X faulthandler "${PY_RUN}" \
+        -r "${RUN}" \
+        -s "${START}" \
+        -n "${N_EVENTS}" \
+        ${CSCINT_OPT} \
+        --referencesystem "${REFERENCESYSTEM}" \
+        --fillOnly \
+        -o "${SCRATCH_DIR}"
+    PROD_FILE=$(find "${SCRATCH_DIR}" -name "raw_histograms_*.root" | head -n 1)
+fi
 
 # 5. Verify generated raw histogram ROOT file
-PROD_FILE=$(find "${SCRATCH_DIR}" -name "raw_histograms_*.root" | head -n 1)
-
 if [ -z "${PROD_FILE}" ] || [ ! -f "${PROD_FILE}" ]; then
-    echo "[ERROR] No raw_histograms_*.root found in ${SCRATCH_DIR}!" >&2
+    echo "[ERROR] Output raw histogram ROOT file was not found in ${SCRATCH_DIR}!" >&2
     exit 1
 fi
 

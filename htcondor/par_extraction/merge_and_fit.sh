@@ -14,6 +14,7 @@ set -eo pipefail
 RUN="5999"
 DO_MERGE=1
 DO_FIT=1
+DO_FIT_SPEED=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,8 +30,12 @@ while [[ $# -gt 0 ]]; do
             DO_MERGE=0
             shift
             ;;
+        --fit-speed)
+            DO_FIT_SPEED=1
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [-r|--run <run_number>] [--merge] [--fit]"
+            echo "Usage: $0 [-r|--run <run_number>] [--merge] [--fit] [--fit-speed]"
             exit 0
             ;;
         *)
@@ -84,6 +89,9 @@ if [ "${DO_MERGE}" -eq 1 ]; then
 
     for i in $(seq 0 $((N_EXPECTED - 1))); do
         RAW_FILE=$(find "${PARALLEL_DIR}/part_${i}" -name "raw_histograms_*.root" 2>/dev/null | head -n 1)
+        if [ -z "${RAW_FILE}" ] || [ ! -f "${RAW_FILE}" ]; then
+            RAW_FILE=$(find "${PARALLEL_DIR}/speed_part_${i}" -name "raw_cscint_*.root" 2>/dev/null | head -n 1)
+        fi
         if [ -f "${RAW_FILE}" ] && [ $(stat -c%s "${RAW_FILE}" 2>/dev/null || echo 0) -gt 10000 ]; then
             RAW_FILES+=("${RAW_FILE}")
         fi
@@ -121,6 +129,22 @@ if [ "${DO_FIT}" -eq 1 ]; then
     CSCINT_OPT=""
     if [ -f "${CSCINT_FILE}" ]; then
         CSCINT_OPT="--cscintFile ${CSCINT_FILE}"
+    fi
+
+    if [ "${DO_FIT_SPEED}" -eq 1 ]; then
+        echo "  -> Fitting full-statistics c_scint constants from merged histograms..."
+        python3 -X faulthandler "${PY_RUN}" \
+            -r "${RUN}" \
+            --referencesystem "${REFERENCESYSTEM}" \
+            --fitSpeedOnly \
+            --fitOnly "${MERGED_ROOT}" \
+            -o "${OUT_DIR}"
+        echo ""
+        echo "======================================================================"
+        echo "[SUCCESS] c_scint speed extraction complete!"
+        echo " Exported JSON: ${OUT_DIR}/run${RUN_STR}_cscintvalues.json"
+        echo "======================================================================"
+        exit 0
     fi
 
     python3 -X faulthandler "${PY_RUN}" \
