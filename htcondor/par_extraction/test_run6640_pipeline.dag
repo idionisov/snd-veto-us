@@ -1,0 +1,51 @@
+# ==============================================================================
+# HTCondor DAGMan Workflow: 1-Job Test Pipeline for Run 6640 (500,000 events)
+#
+# Topology:
+#   [STAGE 1: c_scint]
+#     STAGE1_SPEED_1JOB     (1 worker: events 0 .. 500000, filling dtvxpred)
+#             |
+#             v
+#     MERGE_FIT_SPEED       (Merge 1 part & fit full-stats c_scint JSON)
+#             |
+#             v
+#   [STAGE 2: Time-Walk & Alignment]
+#     STAGE2_TW_1JOB        (1 worker: events 0 .. 500000, filling dtvqdc using c_scint)
+#             |
+#             v
+#     MERGE_FIT_FINAL       (Merge 1 part & fit final calibration ROOT & JSON)
+#
+# Submit on lxplus:
+#   condor_submit_dag test_run6640_pipeline.dag
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Stage 1: Parallel c_scint speed accumulation (1 test job)
+# ------------------------------------------------------------------------------
+JOB STAGE1_SPEED_1JOB par_extraction.sub
+VARS STAGE1_SPEED_1JOB run="6640" out_dir="/eos/user/i/idioniso/Timing/run006640" args_file="args_test_run6640_1job.txt" flavour="testmatch" stage_mode="speed"
+
+# ------------------------------------------------------------------------------
+# Stage 1 Merger & c_scint Fit: produces run006640_cscintvalues.json
+# ------------------------------------------------------------------------------
+JOB MERGE_FIT_SPEED merge_worker.sub
+VARS MERGE_FIT_SPEED run="6640" mode_arg="--fit-speed" mode_name="fit_speed" n_expected="1"
+
+# ------------------------------------------------------------------------------
+# Stage 2: Time-Walk accumulation using Stage 1 c_scint (1 test job)
+# ------------------------------------------------------------------------------
+JOB STAGE2_TW_1JOB par_extraction.sub
+VARS STAGE2_TW_1JOB run="6640" out_dir="/eos/user/i/idioniso/Timing/run006640" args_file="args_test_run6640_1job.txt" flavour="testmatch" stage_mode="full"
+
+# ------------------------------------------------------------------------------
+# Stage 2 Merger & Final Fit: produces final ROOT & consolidated JSON
+# ------------------------------------------------------------------------------
+JOB MERGE_FIT_FINAL merge_worker.sub
+VARS MERGE_FIT_FINAL run="6640" mode_arg="" mode_name="fit_final" n_expected="1"
+
+# ------------------------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------------------------
+PARENT STAGE1_SPEED_1JOB CHILD MERGE_FIT_SPEED
+PARENT MERGE_FIT_SPEED   CHILD STAGE2_TW_1JOB
+PARENT STAGE2_TW_1JOB    CHILD MERGE_FIT_FINAL
