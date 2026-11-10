@@ -22,6 +22,10 @@ while [[ $# -gt 0 ]]; do
             RUN="$2"
             shift 2
             ;;
+        -n|--n-expected)
+            N_EXPECTED="$2"
+            shift 2
+            ;;
         --merge)
             DO_FIT=0
             shift
@@ -102,11 +106,15 @@ if [ "${DO_MERGE}" -eq 1 ]; then
 
     if [ "${FOUND_COUNT}" -lt "${N_EXPECTED}" ]; then
         echo "[WARNING] Expected at least ${N_EXPECTED} files, but found ${FOUND_COUNT}."
-        read -p "Proceed with partial merge? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Merge aborted."
-            exit 1
+        if [ -t 0 ]; then
+            read -p "Proceed with partial merge? [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo "Merge aborted."
+                exit 1
+            fi
+        else
+            echo "[INFO] Running in non-interactive batch environment: proceeding with ${FOUND_COUNT} files."
         fi
     fi
 

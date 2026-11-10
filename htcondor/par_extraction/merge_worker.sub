@@ -8,9 +8,10 @@ initialdir              = $(base_dir)
 
 run                     = $(run:5100)
 mode_arg                = $(mode_arg:--fit)
+n_expected              = $(n_expected:250)
 
 executable              = $(base_dir)/merge_and_fit.sh
-arguments               = -r $(run) $(mode_arg)
+arguments               = -r $(run) -n $(n_expected) $(mode_arg)
 
 output                  = $(base_dir)/out/dag_merge_run$(run)_$(mode_name)_$(ClusterId).out
 error                   = $(base_dir)/err/dag_merge_run$(run)_$(mode_name)_$(ClusterId).err
