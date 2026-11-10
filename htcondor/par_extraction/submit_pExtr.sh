@@ -124,8 +124,8 @@ if [ "${DO_STEP1}" = "1" ]; then
     python3 -X faulthandler "${PY_RUN}" \
         -r "${RUN}" \
         -s 0 \
-        -n 2000000 \
-        --speedEvents 2000000 \
+        -n 5000000 \
+        --speedEvents 5000000 \
         --speedOnly \
         --referencesystem "${REFERENCESYSTEM}" \
         -o "${OUT_DIR}"
