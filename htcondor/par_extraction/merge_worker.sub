@@ -1,0 +1,35 @@
+# ==============================================================================
+# HTCondor Submit File: TimeWalk Merge & Fit Driver
+# Used as intermediate and final nodes in DAGMan workflows
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/par_extraction
+initialdir              = $(base_dir)
+
+run                     = $(run:5100)
+mode_arg                = $(mode_arg:--fit)
+
+executable              = $(base_dir)/merge_and_fit.sh
+arguments               = -r $(run) $(mode_arg)
+
+output                  = $(base_dir)/out/dag_merge_run$(run)_$(mode_name)_$(ClusterId).out
+error                   = $(base_dir)/err/dag_merge_run$(run)_$(mode_name)_$(ClusterId).err
+log                     = $(base_dir)/log/dag_merge_run$(run).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "workday"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files    = $(base_dir)/sndswEnv.sh, /afs/cern.ch/user/i/idioniso/ddfUtils
+
+request_cpus            = 2
+request_memory          = 8GB
+request_disk            = 8GB
+
+queue 1
