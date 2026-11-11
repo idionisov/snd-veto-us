@@ -232,14 +232,13 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
             total = {i: 0 for i in range(4)}
             counter = {i: 0 for i in range(4)}
 
-            theTrack = None
-            for trk in self.task.M.Reco_MuonTracks:
-                tt = trk.getTrackType() if hasattr(trk, 'getTrackType') else trk.GetUniqueID()
-                if tt == 3:
-                    theTrack = trk
-                    break
-            if theTrack is None and self.task.M.Reco_MuonTracks.GetEntries() > 0:
-                theTrack = self.task.M.Reco_MuonTracks[0]
+            theTrack = getattr(self, "current_ds_track", None)
+            if theTrack is None:
+                for trk in self.task.M.Reco_MuonTracks:
+                    tt = trk.getTrackType() if hasattr(trk, 'getTrackType') else trk.GetUniqueID()
+                    if tt == 3:
+                        theTrack = trk
+                        break
             if theTrack is None:
                 return -999.
 
@@ -273,7 +272,7 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
     af.Analysis.GetDSHaverage = safe_GetDSHaverage
 
-    # Histogram cache: channel_key -> {'dt-DS': TH1F, 'dt-SF': TH1F}
+    # Histogram cache: channel_key -> {'dt-DS': TH2F, 'dt-SF': TH2F}
     hist_cache = {}
 
     def get_hist(channel_key, hist_type):
@@ -281,11 +280,11 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
             hist_cache[channel_key] = {}
         if hist_type not in hist_cache[channel_key]:
             if hist_type == "dt-DS":
-                title = f"{channel_key} t_{{0}}^{{DS}} - t_{{SiPM}} (Run {run_nr});t_{{0}}^{{DS}} - t_{{SiPM}} [ns];Counts"
-                h = ROOT.TH1F(f"dt-DS_{channel_key}", title, 200, -50, 50)
+                title = f"{channel_key} t_{{0}}^{{DS}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{DS}} - t_{{SiPM}} [ns]"
+                h = ROOT.TH2F(f"dt-DS_{channel_key}", title, 100, -80, 20, 200, -50, 50)
             else:
-                title = f"{channel_key} t_{{0}}^{{SF}} - t_{{SiPM}} (Run {run_nr});t_{{0}}^{{SF}} - t_{{SiPM}} [ns];Counts"
-                h = ROOT.TH1F(f"dt-SF_{channel_key}", title, 200, -50, 50)
+                title = f"{channel_key} t_{{0}}^{{SF}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{SF}} - t_{{SiPM}} [ns]"
+                h = ROOT.TH2F(f"dt-SF_{channel_key}", title, 100, -80, 20, 200, -50, 50)
             h.SetDirectory(0)
             hist_cache[channel_key][hist_type] = h
         return hist_cache[channel_key][hist_type]
@@ -347,6 +346,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         if not best_ds and not best_sf:
             continue
 
+        analysis.current_ds_track = best_ds["track"] if best_ds else None
+
         # 2. Extract DS Reference Time and apply category window cut
         tds0 = analysis.GetDSHaverage(event.Digi_MuFilterHits, mode="tds0")
         has_valid_ds = False
@@ -369,13 +370,17 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
             continue
 
         # 4. Predict crossed bars:
-        #    - Upstream planes (p: 0..4) crossed by DS track
+        #    - Upstream planes crossed by DS track
         expected_us_bars = {}
         if best_ds:
             pos_ds = best_ds["pos"]
             mom_ds = best_ds["mom"]
-            for plane in range(5):
-                zEx = M.zPos["MuFilter"][20 + plane]
+            n_us_planes = M.systemAndPlanes.get(2, 5)
+            for plane in range(n_us_planes):
+                z_key = 20 + plane
+                if z_key not in M.zPos["MuFilter"]:
+                    continue
+                zEx = M.zPos["MuFilter"][z_key]
                 lam = (zEx - pos_ds.z()) / mom_ds.z()
                 xEx = pos_ds.x() + lam * mom_ds.x()
                 yEx = pos_ds.y() + lam * mom_ds.y()
@@ -384,17 +389,22 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                     node_name = node.GetName()
                     if node_name.startswith("volMuUpstreamBar_"):
                         try:
-                            expected_us_bars[plane] = int(node_name.split("_")[-1])
+                            bar_det_id = int(node_name.split("_")[-1])
+                            expected_us_bars[plane] = (bar_det_id, xEx)
                         except ValueError:
                             pass
 
-        #    - Veto planes (p: 0..1) crossed by SciFi track
+        #    - Veto planes crossed by SciFi track
         expected_veto_bars = {}
         if best_sf:
             pos_sf = best_sf["pos"]
             mom_sf = best_sf["mom"]
-            for plane in range(2):
-                zEx = M.zPos["MuFilter"][10 + plane]
+            n_veto_planes = M.systemAndPlanes.get(1, 2)
+            for plane in range(n_veto_planes):
+                z_key = 10 + plane
+                if z_key not in M.zPos["MuFilter"]:
+                    continue
+                zEx = M.zPos["MuFilter"][z_key]
                 lam = (zEx - pos_sf.z()) / mom_sf.z()
                 xEx = pos_sf.x() + lam * mom_sf.x()
                 yEx = pos_sf.y() + lam * mom_sf.y()
@@ -403,7 +413,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                     node_name = node.GetName()
                     if node_name.startswith("volVetoBar_") or node_name.startswith("volVetoBar_ver_"):
                         try:
-                            expected_veto_bars[plane] = int(node_name.split("_")[-1])
+                            bar_det_id = int(node_name.split("_")[-1])
+                            expected_veto_bars[plane] = (bar_det_id, xEx)
                         except ValueError:
                             pass
 
@@ -416,13 +427,15 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
             # Upstream bars (s == 2): ALWAYS use DS track
             if s == 2:
-                if not best_ds or expected_us_bars.get(p) != detID:
+                if not best_ds or p not in expected_us_bars or expected_us_bars[p][0] != detID:
                     continue
+                x_pred = expected_us_bars[p][1]
 
             # Veto bars (s == 1): ALWAYS use SciFi track
             elif s == 1:
-                if not best_sf or expected_veto_bars.get(p) != detID:
+                if not best_sf or p not in expected_veto_bars or expected_veto_bars[p][0] != detID:
                     continue
+                x_pred = expected_veto_bars[p][1]
 
             else:
                 continue
@@ -433,16 +446,20 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                 if sipm_num < 0 or sipm_num > 15:
                     continue
 
+                # For vertical veto bars (subsystem 1, plane 2, detID >= 12000), readout is top side only (0..7)
+                if s == 1 and p == 2 and sipm_num >= 8:
+                    continue
+
                 t_sipm = clock * tdc2ns
                 ch_key = f"{detID}_{sipm_num}"
 
                 if has_valid_ds:
                     dt_ds = tds0_val - t_sipm
-                    get_hist(ch_key, "dt-DS").Fill(dt_ds)
+                    get_hist(ch_key, "dt-DS").Fill(x_pred, dt_ds)
 
                 if has_valid_sf:
                     dt_sf = tsf0_val - t_sipm
-                    get_hist(ch_key, "dt-SF").Fill(dt_sf)
+                    get_hist(ch_key, "dt-SF").Fill(x_pred, dt_sf)
 
     # 6. Write channel histograms into structured temp ROOT file
     out_f = ROOT.TFile.Open(temp_output, "RECREATE")
