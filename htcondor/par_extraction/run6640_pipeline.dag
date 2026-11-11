@@ -1,0 +1,27 @@
+# ==============================================================================
+# HTCondor DAGMan Workflow: Full Two-Stage TimeWalk Pipeline for Run 6640
+# Generated automatically by make_run_pipeline.py
+# Total Events : 369,364,945 partitioned across 250 jobs
+# Output       : /eos/user/i/idioniso/Timing/run006640
+# ==============================================================================
+
+# Stage 1: Parallel c_scint speed accumulation (250 jobs)
+JOB STAGE1_SPEED par_extraction.sub
+VARS STAGE1_SPEED run="6640" out_dir="/eos/user/i/idioniso/Timing/run006640" args_file="args_run6640_250jobs.txt" flavour="workday" stage_mode="speed"
+
+# Stage 1 Merger & Fit (produces run006640_cscintvalues.json)
+JOB MERGE_FIT_SPEED merge_worker.sub
+VARS MERGE_FIT_SPEED run="6640" mode_arg="--fit-speed" mode_name="fit_speed" n_expected="250"
+
+# Stage 2: Parallel Time-Walk accumulation using Stage 1 c_scint (250 jobs)
+JOB STAGE2_TW par_extraction.sub
+VARS STAGE2_TW run="6640" out_dir="/eos/user/i/idioniso/Timing/run006640" args_file="args_run6640_250jobs.txt" flavour="workday" stage_mode="full"
+
+# Stage 2 Merger & Final Fit (produces final ROOT & consolidated JSON)
+JOB MERGE_FIT_FINAL merge_worker.sub
+VARS MERGE_FIT_FINAL run="6640" mode_arg="" mode_name="fit_final" n_expected="250"
+
+# Dependencies
+PARENT STAGE1_SPEED   CHILD MERGE_FIT_SPEED
+PARENT MERGE_FIT_SPEED CHILD STAGE2_TW
+PARENT STAGE2_TW      CHILD MERGE_FIT_FINAL
