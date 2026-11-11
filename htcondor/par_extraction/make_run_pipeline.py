@@ -14,8 +14,13 @@ import argparse
 import glob
 
 def find_run_events(run_nr):
-    # Try reading from pp2022.csv if available
+    # Try reading from annual run catalogs and pp2022.csv
     csv_paths = [
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/runs_2022.csv",
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/runs_2023.csv",
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/runs_2024.csv",
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/runs_2025.csv",
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/runs_2026.csv",
         "/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/par_drift/pp2022.csv",
         "/eos/user/i/idioniso/Timing/pp2022.csv",
         "/eos/user/i/idioniso/Timing/runs_2022_physics.csv"

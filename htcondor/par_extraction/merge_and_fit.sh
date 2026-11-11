@@ -56,9 +56,18 @@ done
 RUN_STR=$(printf "%06d" "${RUN}")
 OUT_DIR="${OUT_DIR:-/eos/user/i/idioniso/Timing/run${RUN_STR}}"
 PARALLEL_DIR="${PARALLEL_DIR:-${OUT_DIR}/parallel_parts}"
-MERGED_ROOT="${MERGED_ROOT:-${OUT_DIR}/merged_raw_histograms.root}"
+
+if [ "${DO_FIT_SPEED}" -eq 1 ]; then
+    MERGED_ROOT="${MERGED_ROOT:-${OUT_DIR}/merged_raw_cscint.root}"
+else
+    MERGED_ROOT="${MERGED_ROOT:-${OUT_DIR}/merged_raw_histograms.root}"
+fi
+
 CSCINT_FILE="${CSCINT_FILE:-${OUT_DIR}/run${RUN_STR}_cscintvalues.json}"
-CSCINT_RAW="${CSCINT_RAW:-${OUT_DIR}/raw_cscint_histograms.root}"
+CSCINT_RAW="${CSCINT_RAW:-${OUT_DIR}/merged_raw_cscint.root}"
+if [ ! -f "${CSCINT_RAW}" ] && [ -f "${OUT_DIR}/raw_cscint_histograms.root" ]; then
+    CSCINT_RAW="${OUT_DIR}/raw_cscint_histograms.root"
+fi
 N_EXPECTED="${N_EXPECTED:-250}"
 REFERENCESYSTEM="${REFERENCESYSTEM:-0}"
 
@@ -72,9 +81,10 @@ PY_RUN="/afs/cern.ch/user/i/idioniso/snd_master/sndsw/shipLHC/scripts/run_TimeWa
 echo "======================================================================"
 echo " TimeWalk Merger & Final Fitting Pipeline"
 echo " Run:                 ${RUN}"
+echo " Mode:                $([ "${DO_FIT_SPEED}" -eq 1 ] && echo "Stage 1 (Speed Merge & Fit)" || echo "Stage 2 (TimeWalk Final Merge & Fit)")"
 echo " Expected Partitions: ${N_EXPECTED}"
 echo " Parallel Directory:  ${PARALLEL_DIR}"
-echo " Merged ROOT File:    ${MERGED_ROOT}"
+echo " Merged ROOT Target:  ${MERGED_ROOT}"
 echo " Output Directory:    ${OUT_DIR}"
 echo "======================================================================"
 
@@ -86,23 +96,38 @@ if [ "${DO_MERGE}" -eq 1 ]; then
     echo "[STEP 3/4] Collecting raw histograms across all ${N_EXPECTED} jobs..."
     RAW_FILES=()
 
-    if [ -f "${CSCINT_RAW}" ]; then
-        echo "  + Including Step 1 raw histograms: ${CSCINT_RAW}"
+    if [ "${DO_FIT_SPEED}" -ne 1 ] && [ -f "${CSCINT_RAW}" ]; then
+        echo "  + Including Stage 1 raw speed histograms: ${CSCINT_RAW}"
         RAW_FILES+=("${CSCINT_RAW}")
     fi
 
     for i in $(seq 0 $((N_EXPECTED - 1))); do
-        RAW_FILE=$(find "${PARALLEL_DIR}/part_${i}" -name "raw_histograms_*.root" 2>/dev/null | head -n 1)
-        if [ -z "${RAW_FILE}" ] || [ ! -f "${RAW_FILE}" ]; then
-            RAW_FILE=$(find "${PARALLEL_DIR}/speed_part_${i}" -name "raw_cscint_*.root" 2>/dev/null | head -n 1)
+        RAW_FILE=""
+        if [ "${DO_FIT_SPEED}" -eq 1 ]; then
+            if [ -d "${PARALLEL_DIR}/speed_part_${i}" ]; then
+                RAW_FILE=$(find "${PARALLEL_DIR}/speed_part_${i}" -name "raw_cscint_*.root" 2>/dev/null | head -n 1 || true)
+            fi
+        else
+            if [ -d "${PARALLEL_DIR}/part_${i}" ]; then
+                RAW_FILE=$(find "${PARALLEL_DIR}/part_${i}" -name "raw_histograms_*.root" 2>/dev/null | head -n 1 || true)
+            fi
         fi
-        if [ -f "${RAW_FILE}" ] && [ $(stat -c%s "${RAW_FILE}" 2>/dev/null || echo 0) -gt 10000 ]; then
-            RAW_FILES+=("${RAW_FILE}")
+
+        if [ -n "${RAW_FILE}" ] && [ -f "${RAW_FILE}" ]; then
+            F_SIZE=$(stat -c%s "${RAW_FILE}" 2>/dev/null || echo 0)
+            if [ "${F_SIZE}" -gt 5000 ]; then
+                RAW_FILES+=("${RAW_FILE}")
+            fi
         fi
     done
 
     FOUND_COUNT=${#RAW_FILES[@]}
     echo "  -> Found ${FOUND_COUNT} valid raw histogram files."
+
+    if [ "${FOUND_COUNT}" -eq 0 ]; then
+        echo "[ERROR] No valid raw histogram files found to merge!" >&2
+        exit 1
+    fi
 
     if [ "${FOUND_COUNT}" -lt "${N_EXPECTED}" ]; then
         echo "[WARNING] Expected at least ${N_EXPECTED} files, but found ${FOUND_COUNT}."
@@ -118,8 +143,13 @@ if [ "${DO_MERGE}" -eq 1 ]; then
         fi
     fi
 
-    echo "  -> Running hadd -f ${MERGED_ROOT} ..."
-    hadd -f "${MERGED_ROOT}" "${RAW_FILES[@]}"
+    LOCAL_MERGED=$(mktemp /tmp/merged_tw_XXXXXX.root)
+    echo "  -> Merging ${FOUND_COUNT} files into temporary ${LOCAL_MERGED}..."
+    hadd -f "${LOCAL_MERGED}" "${RAW_FILES[@]}"
+    mkdir -p "$(dirname "${MERGED_ROOT}")"
+    echo "  -> Copying merged file to: ${MERGED_ROOT}"
+    cp -f "${LOCAL_MERGED}" "${MERGED_ROOT}"
+    rm -f "${LOCAL_MERGED}"
     echo "[STEP 3/4] Successfully merged histograms into: ${MERGED_ROOT} ($(stat -c%s "${MERGED_ROOT}" 2>/dev/null || echo 0) bytes)"
 fi
 
