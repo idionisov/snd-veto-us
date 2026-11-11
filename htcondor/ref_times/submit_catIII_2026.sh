@@ -13,7 +13,4 @@ echo " Total jobs: $(wc -l < args_partitions_catIII_2026.txt)"
 echo " Flavour:    longlunch"
 echo "======================================================================"
 
-condor_submit ref_times.sub \
-    args_file="${DIR}/args_partitions_catIII_2026.txt" \
-    flavour="longlunch" \
-    "$@"
+condor_submit ref_times_2026.sub "$@"
