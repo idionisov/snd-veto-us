@@ -49,7 +49,7 @@ export PYTHIA_ROOT="${CVMFS_SW}/pythia/sndsw-pythia8309-local1"
 if [ -d "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" ]; then
     export ddfUtils="$(cd "$(dirname "${BASH_SOURCE[0]}")/ddfUtils" && pwd)"
 elif [ -n "${DDFUTILS:-}" ] && [ -d "${DDFUTILS:-}" ]; then
-    export ddfUtils="${DDFUTILS}"
+    export ddfUtils="${DDFUTILS:-}"
 else
     export ddfUtils="/afs/cern.ch/user/i/idioniso/ddfUtils"
 fi
