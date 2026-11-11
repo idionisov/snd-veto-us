@@ -73,6 +73,8 @@ htcondor/**/log/
 *.out
 *.tmp
 *.tmp*
+core.*
+idioniso.cc
 
 # ---------------------
 # Editors, OS & IDE Metadata
