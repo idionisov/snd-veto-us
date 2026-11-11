@@ -1,0 +1,38 @@
+# ==============================================================================
+# HTCondor Submit File: SiPM Ref Diff (cscint) Extraction per Partition
+#
+# Process per job: One raw partition file (sndsw_raw-XXXX.root)
+# Single-thread execution over all entries in the partition (no event breakpoint)
+# Flavour: longlunch
+# Output: /eos/user/i/idioniso/Timing/cscint_parts/<category>/run<RUN>/part_<PARTITION>.root
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:longlunch)
+args_file               = $(args_file:$(base_dir)/args_partitions_all.txt)
+out_base                = $(out_base:/eos/user/i/idioniso/Timing/cscint_parts)
+
+executable              = $(base_dir)/run_cscint_worker.sh
+arguments               = $(run) $(partition) $(category) $(out_base)
+environment             = "FORCE=$(force:0)"
+
+output                  = $(base_dir)/out/cscint_run$(run)_part$(partition)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/cscint_run$(run)_part$(partition)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/cscint_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 2GB
+max_retries             = 2
+
+queue run, partition, category from $(args_file)

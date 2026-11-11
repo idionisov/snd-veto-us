@@ -45,8 +45,8 @@ def parse_args():
         "-c", "--category",
         dest="category",
         default="all",
-        choices=["catI", "catII", "all"],
-        help="Category to merge (catI, catII, or all; default: all)"
+        choices=["catI", "catII", "catIII", "all"],
+        help="Category to merge (catI, catII, catIII, or all; default: all)"
     )
     parser.add_argument(
         "-r", "--run",
@@ -116,7 +116,7 @@ def main():
         print(f"[ERROR] Input directory does not exist: {input_dir}", file=sys.stderr)
         sys.exit(1)
 
-    categories = ["catI", "catII"] if args.category == "all" else [args.category]
+    categories = ["catI", "catII", "catIII"] if args.category == "all" else [args.category]
 
     print("======================================================================")
     print(" SND@LHC Reference Time Partition Merger")

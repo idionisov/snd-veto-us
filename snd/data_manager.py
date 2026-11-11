@@ -76,7 +76,12 @@ class DataManager:
             run_num = int(source)
 
         if run_num is not None:
-            csv_str = csv_data_path if csv_data_path is not None else ""
+            if csv_data_path is None:
+                repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                default_csv = os.path.join(repo_root, "config", "data_paths.csv")
+                csv_str = default_csv if os.path.exists(default_csv) else ""
+            else:
+                csv_str = str(csv_data_path)
             self._cpp = ROOT.snd.DataManager(run_num, n_files, csv_str, tree_str, threads_int)
         elif isinstance(source, ROOT.TChain):
             self._cpp = ROOT.snd.DataManager(source, False, threads_int)
@@ -378,6 +383,10 @@ class DataManager:
     @staticmethod
     def get_data_base_path(run: int, csv_file_path: Optional[str] = None) -> str:
         load_analysis_libraries()
+        if csv_file_path is None:
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            default_csv = os.path.join(repo_root, "config", "data_paths.csv")
+            csv_file_path = default_csv if os.path.exists(default_csv) else ""
         return str(ROOT.snd.DataManager.FetchDataBasePath(int(run), csv_file_path or ""))
 
     @staticmethod

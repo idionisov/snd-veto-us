@@ -1,0 +1,1 @@
+/afs/cern.ch/work/i/idioniso/snd-veto-us/sndswEnv.sh
