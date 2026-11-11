@@ -299,11 +299,26 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
     )
 
     heartbeat = 50000
+
+    def passes_fiducial(det_id, x_ex, y_ex, cut=5.0):
+        a_pt, b_pt = ROOT.TVector3(), ROOT.TVector3()
+        mu_filter.GetPosition(det_id, a_pt, b_pt)
+        subsys, pl, _ = analysis.parseDetID(det_id)
+        if subsys == 1 and pl == 2:
+            return (min(a_pt.y(), b_pt.y()) + cut) <= y_ex <= (max(a_pt.y(), b_pt.y()) - cut)
+        else:
+            return (min(a_pt.x(), b_pt.x()) + cut) <= x_ex <= (max(a_pt.x(), b_pt.x()) - cut)
+
     for n in range(events_to_process):
         if n > 0 and n % heartbeat == 0:
             print(f"   [Run {run_nr}] Processed {n:,} / {events_to_process:,} events...", flush=True)
 
         event = M.GetEvent(n)
+
+        # Bunch Crossing selection: only accept colliding IP1 bunches for LHC synchronous runs
+        if analysis.isLHCsynch(run_nr):
+            if hasattr(M, "xing") and isinstance(M.xing, dict) and not M.xing.get("IP1", True):
+                continue
 
         # 1. Select qualified tracks:
         #    - DS tracks (track_type == 3) for Upstream bars (s == 2)
@@ -390,7 +405,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                     if node_name.startswith("volMuUpstreamBar_"):
                         try:
                             bar_det_id = int(node_name.split("_")[-1])
-                            expected_us_bars[plane] = (bar_det_id, xEx)
+                            if passes_fiducial(bar_det_id, xEx, yEx):
+                                expected_us_bars[plane] = (bar_det_id, xEx)
                         except ValueError:
                             pass
 
@@ -414,7 +430,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                     if node_name.startswith("volVetoBar_") or node_name.startswith("volVetoBar_ver_"):
                         try:
                             bar_det_id = int(node_name.split("_")[-1])
-                            expected_veto_bars[plane] = (bar_det_id, xEx)
+                            if passes_fiducial(bar_det_id, xEx, yEx):
+                                expected_veto_bars[plane] = (bar_det_id, xEx)
                         except ValueError:
                             pass
 
@@ -441,13 +458,27 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                 continue
 
             channels_t = hit.GetAllTimes()
+            signals_dict = dict(hit.GetAllSignals())
             for item in channels_t:
                 sipm_num, clock = item
                 if sipm_num < 0 or sipm_num > 15:
                     continue
 
+                # Drop small SiPMs in US
+                if s == 2 and analysis.IsSmallSiPMchannel(sipm_num):
+                    continue
+
                 # For vertical veto bars (subsystem 1, plane 2, detID >= 12000), readout is top side only (0..7)
                 if s == 1 and p == 2 and sipm_num >= 8:
+                    continue
+
+                # Skip known dead channel
+                if f"{detID}_{sipm_num}" == "21005_15":
+                    continue
+
+                # Require valid positive QDC signal above threshold (matching TimeWalk.py)
+                qdc = signals_dict.get(sipm_num, -999.)
+                if qdc == -999. or qdc <= 0:
                     continue
 
                 t_sipm = clock * tdc2ns
