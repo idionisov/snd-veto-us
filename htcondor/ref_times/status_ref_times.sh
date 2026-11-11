@@ -12,14 +12,29 @@ echo "======================================================================"
 condor_q -nobatch 2>/dev/null | grep -E "reft_|ID" | head -n 25 || condor_q
 echo ""
 
-TOTAL_ALL=$(wc -l < "${DIR}/args_partitions_all.txt" 2>/dev/null || echo 0)
-TOTAL_CATI=$(wc -l < "${DIR}/args_partitions_catI.txt" 2>/dev/null || echo 0)
-TOTAL_CATII=$(wc -l < "${DIR}/args_partitions_catII.txt" 2>/dev/null || echo 0)
-TOTAL_CATIII=$(wc -l < "${DIR}/args_partitions_catIII.txt" 2>/dev/null || echo 0)
-TOTAL_2023=$(wc -l < "${DIR}/args_partitions_catIII_2023.txt" 2>/dev/null || echo 0)
-TOTAL_2024=$(wc -l < "${DIR}/args_partitions_catIII_2024.txt" 2>/dev/null || echo 0)
-TOTAL_2025=$(wc -l < "${DIR}/args_partitions_catIII_2025.txt" 2>/dev/null || echo 0)
-TOTAL_2026=$(wc -l < "${DIR}/args_partitions_catIII_2026.txt" 2>/dev/null || echo 0)
+SUFFIX=""
+if [ "$1" == "--max15" ] || [ "$1" == "max15" ] || [ "$1" == "15" ]; then
+    SUFFIX="_max15"
+elif [[ "$1" =~ ^_ ]]; then
+    SUFFIX="$1"
+fi
+
+get_lines() {
+    [ -f "$1" ] && wc -l < "$1" || echo 0
+}
+
+TOTAL_ALL=$(get_lines "${DIR}/args_partitions_all${SUFFIX}.txt")
+TOTAL_CATI=$(get_lines "${DIR}/args_partitions_catI${SUFFIX}.txt")
+TOTAL_CATII=$(get_lines "${DIR}/args_partitions_catII${SUFFIX}.txt")
+TOTAL_CATIII=$(get_lines "${DIR}/args_partitions_catIII${SUFFIX}.txt")
+TOTAL_2023=$(get_lines "${DIR}/args_partitions_catIII_2023${SUFFIX}.txt")
+TOTAL_2024=$(get_lines "${DIR}/args_partitions_catIII_2024${SUFFIX}.txt")
+TOTAL_2025=$(get_lines "${DIR}/args_partitions_catIII_2025${SUFFIX}.txt")
+TOTAL_2026=$(get_lines "${DIR}/args_partitions_catIII_2026${SUFFIX}.txt")
+
+if [ "${TOTAL_ALL}" -eq 0 ] && [ "${TOTAL_CATIII}" -gt 0 ]; then
+    TOTAL_ALL=$((TOTAL_CATI + TOTAL_CATII + TOTAL_CATIII))
+fi
 
 DONE_CATI=0
 DONE_CATII=0
@@ -28,37 +43,58 @@ DONE_2024=0
 DONE_2025=0
 DONE_2026=0
 
-if [ -d "${OUT_PARTS}/catI" ]; then
-    DONE_CATI=$(find "${OUT_PARTS}/catI" -name "part_*.root" 2>/dev/null | wc -l)
-fi
-if [ -d "${OUT_PARTS}/catII" ]; then
-    DONE_CATII=$(find "${OUT_PARTS}/catII" -name "part_*.root" 2>/dev/null | wc -l)
-fi
-
-# Count completed partitions per year for Cat III
-count_year_parts() {
+# Count completed partitions specifically listed in args_file
+count_args_parts() {
     local args_file="$1"
     local count=0
-    if [ ! -f "${args_file}" ] || [ ! -d "${OUT_PARTS}/catIII" ]; then
+    if [ ! -f "${args_file}" ]; then
         echo 0
         return
     fi
-    # extract unique runs
-    local runs=($(awk '{print $1}' "${args_file}" | sort -u))
-    for r in "${runs[@]}"; do
-        local rdir="${OUT_PARTS}/catIII/run${r}"
-        if [ -d "${rdir}" ]; then
-            local n=$(find "${rdir}" -name "part_*.root" 2>/dev/null | wc -l)
-            count=$((count + n))
+    while read -r r p cat; do
+        if [ -f "${OUT_PARTS}/${cat}/run${r}/part_${p}.root" ]; then
+            count=$((count + 1))
         fi
-    done
+    done < "${args_file}"
     echo "${count}"
 }
 
-DONE_2023=$(count_year_parts "${DIR}/args_partitions_catIII_2023.txt")
-DONE_2024=$(count_year_parts "${DIR}/args_partitions_catIII_2024.txt")
-DONE_2025=$(count_year_parts "${DIR}/args_partitions_catIII_2025.txt")
-DONE_2026=$(count_year_parts "${DIR}/args_partitions_catIII_2026.txt")
+if [ -n "${SUFFIX}" ]; then
+    DONE_CATI=$(count_args_parts "${DIR}/args_partitions_catI${SUFFIX}.txt")
+    DONE_CATII=$(count_args_parts "${DIR}/args_partitions_catII${SUFFIX}.txt")
+    DONE_2023=$(count_args_parts "${DIR}/args_partitions_catIII_2023${SUFFIX}.txt")
+    DONE_2024=$(count_args_parts "${DIR}/args_partitions_catIII_2024${SUFFIX}.txt")
+    DONE_2025=$(count_args_parts "${DIR}/args_partitions_catIII_2025${SUFFIX}.txt")
+    DONE_2026=$(count_args_parts "${DIR}/args_partitions_catIII_2026${SUFFIX}.txt")
+else
+    if [ -d "${OUT_PARTS}/catI" ]; then
+        DONE_CATI=$(find "${OUT_PARTS}/catI" -name "part_*.root" 2>/dev/null | wc -l)
+    fi
+    if [ -d "${OUT_PARTS}/catII" ]; then
+        DONE_CATII=$(find "${OUT_PARTS}/catII" -name "part_*.root" 2>/dev/null | wc -l)
+    fi
+    count_year_parts() {
+        local args_file="$1"
+        local count=0
+        if [ ! -f "${args_file}" ] || [ ! -d "${OUT_PARTS}/catIII" ]; then
+            echo 0
+            return
+        fi
+        local runs=($(awk '{print $1}' "${args_file}" | sort -u))
+        for r in "${runs[@]}"; do
+            local rdir="${OUT_PARTS}/catIII/run${r}"
+            if [ -d "${rdir}" ]; then
+                local n=$(find "${rdir}" -name "part_*.root" 2>/dev/null | wc -l)
+                count=$((count + n))
+            fi
+        done
+        echo "${count}"
+    }
+    DONE_2023=$(count_year_parts "${DIR}/args_partitions_catIII_2023.txt")
+    DONE_2024=$(count_year_parts "${DIR}/args_partitions_catIII_2024.txt")
+    DONE_2025=$(count_year_parts "${DIR}/args_partitions_catIII_2025.txt")
+    DONE_2026=$(count_year_parts "${DIR}/args_partitions_catIII_2026.txt")
+fi
 DONE_CATIII=$((DONE_2023 + DONE_2024 + DONE_2025 + DONE_2026))
 
 DONE_ALL=$((DONE_CATI + DONE_CATII + DONE_CATIII))

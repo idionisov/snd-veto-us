@@ -88,100 +88,181 @@ def main():
         default=REPO_ROOT,
         help=f"Root of sndVetoUS repo containing runs_YYYY.csv (default: {REPO_ROOT})"
     )
+    parser.add_argument(
+        "-p", "--max-partitions",
+        type=int,
+        default=None,
+        help="Maximum number of partitions per run (default: None, all partitions)"
+    )
+    parser.add_argument(
+        "-t", "--top-runs",
+        type=int,
+        default=10,
+        help="Number of highest-entries collision runs to select per year for Cat III (default: 10)"
+    )
+    parser.add_argument(
+        "-c", "--category",
+        type=str,
+        default="all",
+        choices=["all", "catI", "catII", "catIII"],
+        help="Category to process (default: all)"
+    )
+    parser.add_argument(
+        "--from-existing",
+        action="store_true",
+        help="Fast mode: filter from existing full args_partitions_*.txt files instead of rescanning EOS"
+    )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default=None,
+        help="Suffix for output argument files (default: '' if no partition limit, else '_max<P>')"
+    )
     args = parser.parse_args()
+
+    suffix = args.suffix if args.suffix is not None else (f"_max{args.max_partitions}" if args.max_partitions is not None else "")
 
     catI_jobs = []
     catII_jobs = []
     catIII_jobs_by_year = {y: [] for y in (2023, 2024, 2025, 2026)}
     catIII_jobs = []
 
-    # 1. Process 2022 (Category I & Category II)
-    csv_2022 = os.path.join(args.repo_root, "runs_2022.csv")
-    if os.path.exists(csv_2022):
-        df_2022 = pd.read_csv(csv_2022)
-        df_2022["cat_norm"] = df_2022["category"].apply(norm_cat)
-        mask_2022 = (
-            df_2022["cat_norm"].isin(["catI", "catII"]) &
-            (df_2022["entries"] > 3000000) &
-            (df_2022["luminosity_pb"] > 0) &
-            (df_2022["is_physics_collision"] == True)
-        )
-        qual_2022 = df_2022[mask_2022].sort_values("run_number")
-        print(f"Loaded {len(qual_2022)} qualifying 2022 runs (>3M entries, nonzero lumi).")
+    if args.from_existing:
+        print("[INFO] Fast mode: reading from existing full partition args files...")
+        from collections import defaultdict
 
-        for _, row in qual_2022.iterrows():
-            run = int(row["run_number"])
-            cat = row["cat_norm"]
-            run_dir = get_run_dir(2022, run)
-            partitions = scan_partitions(run_dir)
-            if not partitions:
-                print(f"[WARNING] No raw files found in {run_dir}")
-                continue
-            for p in partitions:
-                line = f"{run} {p} {cat}\n"
-                if cat == "catI":
-                    catI_jobs.append(line)
-                elif cat == "catII":
-                    catII_jobs.append(line)
+        def filter_file(fpath):
+            if not os.path.exists(fpath):
+                return []
+            run_map = defaultdict(list)
+            with open(fpath) as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if parts:
+                        run_map[parts[0]].append(line)
+            out = []
+            for r, lines in run_map.items():
+                if args.max_partitions is not None:
+                    out.extend(lines[:args.max_partitions])
+                else:
+                    out.extend(lines)
+            return out
 
-    # 2. Process 2023-2026 (Category III: 10 runs with the most entries per year)
-    for y in (2023, 2024, 2025, 2026):
-        csv_y = os.path.join(args.repo_root, f"runs_{y}.csv")
-        if not os.path.exists(csv_y):
-            print(f"[WARNING] Catalog not found: {csv_y}")
-            continue
-        df_y = pd.read_csv(csv_y)
-        thresh = THRESHOLDS_CATIII[y]
-        mask_y = (
-            (df_y["is_physics_collision"] == True) &
-            (df_y["luminosity_pb"] > 0) &
-            (df_y["entries"] > thresh)
-        )
-        qual_y = df_y[mask_y].sort_values("run_number")
-        print(f"Year {y}: Loaded {len(qual_y)} qualifying Category III runs (entries > {thresh:,}).")
+        if args.category in ("all", "catI"):
+            catI_jobs = filter_file(os.path.join(BASE_DIR, "args_partitions_catI.txt"))
+        if args.category in ("all", "catII"):
+            catII_jobs = filter_file(os.path.join(BASE_DIR, "args_partitions_catII.txt"))
+        if args.category in ("all", "catIII"):
+            for y in (2023, 2024, 2025, 2026):
+                src_y = os.path.join(BASE_DIR, f"args_partitions_catIII_{y}.txt")
+                catIII_jobs_by_year[y] = filter_file(src_y)
+                catIII_jobs.extend(catIII_jobs_by_year[y])
+    else:
+        # 1. Process 2022 (Category I & Category II)
+        if args.category in ("all", "catI", "catII"):
+            csv_2022 = os.path.join(args.repo_root, "runs_2022.csv")
+            if os.path.exists(csv_2022):
+                df_2022 = pd.read_csv(csv_2022)
+                df_2022["cat_norm"] = df_2022["category"].apply(norm_cat)
+                allowed_cats = ["catI", "catII"] if args.category == "all" else [args.category]
+                mask_2022 = (
+                    df_2022["cat_norm"].isin(allowed_cats) &
+                    (df_2022["entries"] > 3000000) &
+                    (df_2022["luminosity_pb"] > 0) &
+                    (df_2022["is_physics_collision"] == True)
+                )
+                qual_2022 = df_2022[mask_2022].sort_values("run_number")
+                print(f"Loaded {len(qual_2022)} qualifying 2022 runs (>3M entries, nonzero lumi).")
 
-        for _, row in qual_y.iterrows():
-            run = int(row["run_number"])
-            run_dir = get_run_dir(y, run)
-            partitions = scan_partitions(run_dir)
-            if not partitions:
-                print(f"[WARNING] No raw files found in {run_dir}")
-                continue
-            for p in partitions:
-                line = f"{run} {p} catIII\n"
-                catIII_jobs_by_year[y].append(line)
-                catIII_jobs.append(line)
+                for _, row in qual_2022.iterrows():
+                    run = int(row["run_number"])
+                    cat = row["cat_norm"]
+                    run_dir = get_run_dir(2022, run)
+                    partitions = scan_partitions(run_dir)
+                    if not partitions:
+                        print(f"[WARNING] No raw files found in {run_dir}")
+                        continue
+                    if args.max_partitions is not None:
+                        partitions = partitions[:args.max_partitions]
+                    for p in partitions:
+                        line = f"{run} {p} {cat}\n"
+                        if cat == "catI":
+                            catI_jobs.append(line)
+                        elif cat == "catII":
+                            catII_jobs.append(line)
+
+        # 2. Process 2023-2026 (Category III: top runs with the most entries per year)
+        if args.category in ("all", "catIII"):
+            for y in (2023, 2024, 2025, 2026):
+                csv_y = os.path.join(args.repo_root, f"runs_{y}.csv")
+                if not os.path.exists(csv_y):
+                    print(f"[WARNING] Catalog not found: {csv_y}")
+                    continue
+                df_y = pd.read_csv(csv_y)
+                mask_y = (
+                    (df_y["is_physics_collision"] == True) &
+                    (df_y["luminosity_pb"] > 0)
+                )
+                qual_y = (
+                    df_y[mask_y]
+                    .sort_values("entries", ascending=False)
+                    .head(args.top_runs)
+                    .sort_values("run_number")
+                )
+                print(f"Year {y}: Loaded {len(qual_y)} qualifying Category III runs (top {args.top_runs} by entries).")
+
+                for _, row in qual_y.iterrows():
+                    run = int(row["run_number"])
+                    run_dir = get_run_dir(y, run)
+                    partitions = scan_partitions(run_dir)
+                    if not partitions:
+                        print(f"[WARNING] No raw files found in {run_dir}")
+                        continue
+                    if args.max_partitions is not None:
+                        partitions = partitions[:args.max_partitions]
+                    for p in partitions:
+                        line = f"{run} {p} catIII\n"
+                        catIII_jobs_by_year[y].append(line)
+                        catIII_jobs.append(line)
 
     all_jobs = catI_jobs + catII_jobs + catIII_jobs
 
     # 3. Write argument files
-    path_all = os.path.join(BASE_DIR, "args_partitions_all.txt")
-    path_catI = os.path.join(BASE_DIR, "args_partitions_catI.txt")
-    path_catII = os.path.join(BASE_DIR, "args_partitions_catII.txt")
-    path_catIII = os.path.join(BASE_DIR, "args_partitions_catIII.txt")
+    written_files = []
+    if args.category == "all":
+        path_all = os.path.join(BASE_DIR, f"args_partitions_all{suffix}.txt")
+        with open(path_all, "w") as f:
+            f.writelines(all_jobs)
+        written_files.append(("All categories", path_all, len(all_jobs)))
 
-    with open(path_all, "w") as f:
-        f.writelines(all_jobs)
-    with open(path_catI, "w") as f:
-        f.writelines(catI_jobs)
-    with open(path_catII, "w") as f:
-        f.writelines(catII_jobs)
-    with open(path_catIII, "w") as f:
-        f.writelines(catIII_jobs)
+    if args.category in ("all", "catI"):
+        path_catI = os.path.join(BASE_DIR, f"args_partitions_catI{suffix}.txt")
+        with open(path_catI, "w") as f:
+            f.writelines(catI_jobs)
+        written_files.append(("Category I (2022)", path_catI, len(catI_jobs)))
 
-    for y in (2023, 2024, 2025, 2026):
-        path_y = os.path.join(BASE_DIR, f"args_partitions_catIII_{y}.txt")
-        with open(path_y, "w") as f:
-            f.writelines(catIII_jobs_by_year[y])
+    if args.category in ("all", "catII"):
+        path_catII = os.path.join(BASE_DIR, f"args_partitions_catII{suffix}.txt")
+        with open(path_catII, "w") as f:
+            f.writelines(catII_jobs)
+        written_files.append(("Category II (2022)", path_catII, len(catII_jobs)))
+
+    if args.category in ("all", "catIII"):
+        path_catIII = os.path.join(BASE_DIR, f"args_partitions_catIII{suffix}.txt")
+        with open(path_catIII, "w") as f:
+            f.writelines(catIII_jobs)
+        written_files.append(("Category III (all)", path_catIII, len(catIII_jobs)))
+
+        for y in (2023, 2024, 2025, 2026):
+            path_y = os.path.join(BASE_DIR, f"args_partitions_catIII_{y}{suffix}.txt")
+            with open(path_y, "w") as f:
+                f.writelines(catIII_jobs_by_year[y])
+            written_files.append((f"  Category III ({y})", path_y, len(catIII_jobs_by_year[y])))
 
     print("======================================================================")
     print(" HTCondor Partition Job Lists Generated:")
-    print(f" Total partition jobs (All)      : {len(all_jobs):,} -> {path_all}")
-    print(f" Category I partition jobs (2022) : {len(catI_jobs):,} -> {path_catI}")
-    print(f" Category II partition jobs (2022): {len(catII_jobs):,} -> {path_catII}")
-    print(f" Category III partition jobs     : {len(catIII_jobs):,} -> {path_catIII}")
-    for y in (2023, 2024, 2025, 2026):
-        print(f"   - {y} Category III (10 runs) : {len(catIII_jobs_by_year[y]):,} -> args_partitions_catIII_{y}.txt")
+    for desc, pth, count in written_files:
+        print(f" {desc:<25}: {count:,} jobs -> {os.path.basename(pth)}")
     print("======================================================================")
 
 

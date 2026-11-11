@@ -48,7 +48,23 @@ Submit all jobs (24,318):
 ./submit_all.sh
 ```
 
-Or by category:
+#### Top 10 Runs (15 Partitions/Run = 600 Jobs Total):
+Submit all 600 jobs across 2023–2026 (150 jobs/year):
+```bash
+./submit_catIII_max15.sh           # Submits 4 clusters of 150 jobs (one per year)
+# or in a single cluster:
+./submit_catIII_max15.sh --single  # Submits all 600 jobs in 1 cluster
+```
+Or submit individual years (150 jobs each):
+```bash
+./submit_catIII_max15.sh 2023      # 150 jobs
+./submit_catIII_max15.sh 2024      # 150 jobs
+./submit_catIII_max15.sh 2025      # 150 jobs
+./submit_catIII_max15.sh 2026      # 150 jobs
+```
+
+#### Full Run Submissions:
+By category:
 ```bash
 ./submit_catI.sh        # 4,375 jobs (2022)
 ./submit_catII.sh       # 3,389 jobs (2022)
@@ -64,8 +80,13 @@ Or Category III by year:
 ```
 
 ### 2. Check Progress
+Full scan:
 ```bash
 ./status_ref_times.sh
+```
+Or for the 15-partition submission:
+```bash
+./status_ref_times.sh --max15
 ```
 
 ### 3. Merge Output
