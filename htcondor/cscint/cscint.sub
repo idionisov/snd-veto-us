@@ -10,7 +10,7 @@
 base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint
 initialdir              = $(base_dir)
 
-flavour                 = $(flavour:longlunch)
+flavour                 = $(flavour:workday)
 args_file               = $(args_file:$(base_dir)/args_partitions_all.txt)
 out_base                = $(out_base:/eos/user/i/idioniso/Timing/cscint_parts)
 

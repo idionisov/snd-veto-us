@@ -28,7 +28,7 @@ echo " Run:         ${RUN}"
 echo " Partition:   ${PARTITION}"
 echo " Category:    ${CATEGORY}"
 echo " Destination: ${TARGET_FILE}"
-echo " Flavour:     longlunch"
+echo " Flavour:     workday"
 echo " Time:        $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
 

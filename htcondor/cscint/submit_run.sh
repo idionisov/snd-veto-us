@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
 RUN="${1:-5097}"
-FLAVOUR="${2:-longlunch}"
+FLAVOUR="${2:-workday}"
 shift 2 2>/dev/null || shift $# 2>/dev/null || true
 
 ARGS_RUN="${DIR}/args_run${RUN}.txt"
