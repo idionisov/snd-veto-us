@@ -11,7 +11,7 @@ Each raw partition file (`sndsw_raw-XXXX.root`) is processed as an independent, 
   - `args_partitions_catI.txt` (4,375 jobs)
   - `args_partitions_catII.txt` (3,389 jobs)
 - **HTCondor Submit file**: `ref_times.sub`
-  - Flavour: `workday`
+  - Flavour: `longlunch`
   - CPU: 1 core
   - Memory: 4GB
   - Disk: 2GB

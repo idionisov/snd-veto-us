@@ -10,10 +10,10 @@ cd "${DIR}"
 echo "======================================================================"
 echo " Submitting Category I Partition Jobs"
 echo " Total jobs: $(wc -l < args_partitions_catI.txt)"
-echo " Flavour:    workday"
+echo " Flavour:    longlunch"
 echo "======================================================================"
 
 condor_submit ref_times.sub \
     args_file="${DIR}/args_partitions_catI.txt" \
-    flavour="workday" \
+    flavour="longlunch" \
     "$@"
