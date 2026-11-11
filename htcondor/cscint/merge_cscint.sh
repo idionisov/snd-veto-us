@@ -117,37 +117,39 @@ for cat in "${CATS_TO_PROCESS[@]}"; do
     fi
 done
 
-# 2. Merge all runs of the same category into category ROOT file
-echo "--- Step 2: Merging categories into unified category ROOT files ---"
-for cat in "${CATS_TO_PROCESS[@]}"; do
-    cat_dir="${IN_BASE}/${cat}"
-    if [ ! -d "${cat_dir}" ]; then
-        continue
-    fi
-
-    cat_run_files=()
-    for rdir in $(find "${cat_dir}" -mindepth 1 -maxdepth 1 -type d -name "run*" | sort); do
-        rname=$(basename "${rdir}")
-        rfile="${OUT_RUNS}/${rname}.root"
-        if [ -f "${rfile}" ]; then
-            cat_run_files+=("${rfile}")
+# 2. Merge all runs of the same category into category ROOT file (skip if specific run was targeted)
+if [ -z "${SPECIFIC_RUN}" ]; then
+    echo "--- Step 2: Merging categories into unified category ROOT files ---"
+    for cat in "${CATS_TO_PROCESS[@]}"; do
+        cat_dir="${IN_BASE}/${cat}"
+        if [ ! -d "${cat_dir}" ]; then
+            continue
         fi
+
+        cat_run_files=()
+        for rdir in $(find "${cat_dir}" -mindepth 1 -maxdepth 1 -type d -name "run*" | sort); do
+            rname=$(basename "${rdir}")
+            rfile="${OUT_RUNS}/${rname}.root"
+            if [ -f "${rfile}" ]; then
+                cat_run_files+=("${rfile}")
+            fi
+        done
+
+        out_cat_file="${OUT_CATS}/${cat}.root"
+        if [ ${#cat_run_files[@]} -eq 0 ]; then
+            echo " [WARNING] No merged run files found for ${cat} to combine into ${out_cat_file}."
+            continue
+        fi
+
+        echo " ~ [MERGE CAT] ${cat} (${#cat_run_files[@]} runs) -> ${out_cat_file}"
+        tmp_cat="${out_cat_file}.tmp.$$"
+        hadd -f -k "${tmp_cat}" "${cat_run_files[@]}" >/dev/null 2>&1
+        mv -f "${tmp_cat}" "${out_cat_file}"
+
+        cat_size=$(stat -c%s "${out_cat_file}" 2>/dev/null || echo 0)
+        echo "[SUCCESS] Generated ${out_cat_file} (${cat_size} bytes)."
     done
-
-    out_cat_file="${OUT_CATS}/${cat}.root"
-    if [ ${#cat_run_files[@]} -eq 0 ]; then
-        echo " [WARNING] No merged run files found for ${cat} to combine into ${out_cat_file}."
-        continue
-    fi
-
-    echo " ~ [MERGE CAT] ${cat} (${#cat_run_files[@]} runs) -> ${out_cat_file}"
-    tmp_cat="${out_cat_file}.tmp.$$"
-    hadd -f -k "${tmp_cat}" "${cat_run_files[@]}" >/dev/null 2>&1
-    mv -f "${tmp_cat}" "${out_cat_file}"
-
-    cat_size=$(stat -c%s "${out_cat_file}" 2>/dev/null || echo 0)
-    echo "[SUCCESS] Generated ${out_cat_file} (${cat_size} bytes)."
-done
+fi
 
 echo "======================================================================"
 echo "[FINISHED] All run and category merges complete."

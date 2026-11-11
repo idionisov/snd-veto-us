@@ -28,6 +28,12 @@ DONE_ALL=$((DONE_CATI + DONE_CATII))
 
 echo "======================================================================"
 echo " Output Partition Progress on EOS (${OUT_PARTS}):"
+if [ -n "$1" ]; then
+    RUN="$1"
+    RUN_PARTS=$(find "${OUT_PARTS}" -path "*/run${RUN}/part_*.root" 2>/dev/null | wc -l)
+    TOTAL_RUN=$(grep -c "^${RUN} " "${DIR}/args_partitions_all.txt" 2>/dev/null || echo 0)
+    echo " Run ${RUN} Progress : ${RUN_PARTS} / ${TOTAL_RUN} partitions completed"
+fi
 echo " Category I  : ${DONE_CATI} / ${TOTAL_CATI} completed"
 echo " Category II : ${DONE_CATII} / ${TOTAL_CATII} completed"
 echo " Total       : ${DONE_ALL} / ${TOTAL_ALL} completed"
