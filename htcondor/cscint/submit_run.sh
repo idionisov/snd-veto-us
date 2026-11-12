@@ -14,8 +14,14 @@ shift 2 2>/dev/null || shift $# 2>/dev/null || true
 ARGS_RUN="${DIR}/args_run${RUN}.txt"
 
 # 1. Generate or extract partition list for the target run
-if grep -q "^${RUN} " "${DIR}/args_partitions_all.txt" 2>/dev/null; then
+if [ -s "${ARGS_RUN}" ]; then
+    echo "[INFO] Using existing argument list: ${ARGS_RUN}"
+elif grep -q "^${RUN} " "${DIR}/args_partitions_all.txt" 2>/dev/null; then
     grep "^${RUN} " "${DIR}/args_partitions_all.txt" > "${ARGS_RUN}"
+elif grep -q "^${RUN} " "${DIR}/../ref_times/args_partitions_all.txt" 2>/dev/null; then
+    grep "^${RUN} " "${DIR}/../ref_times/args_partitions_all.txt" > "${ARGS_RUN}"
+elif grep -q "^${RUN} " "${DIR}/../ref_times/args_partitions_catIII.txt" 2>/dev/null; then
+    grep "^${RUN} " "${DIR}/../ref_times/args_partitions_catIII.txt" > "${ARGS_RUN}"
 else
     source "${DIR}/sndswEnv.sh" 2>/dev/null || true
     python3 -c "
@@ -29,6 +35,10 @@ if not os.path.exists(run_dir):
         cand = f'/eos/experiment/sndlhc/convertedData/physics/{yr}/run_{${RUN}:06d}'
         if os.path.exists(cand):
             run_dir = cand
+            break
+        subs = glob.glob(f'/eos/experiment/sndlhc/convertedData/physics/{yr}/run_*/run_{${RUN}:06d}')
+        if subs:
+            run_dir = subs[0]
             break
 raw_files = glob.glob(os.path.join(run_dir, 'sndsw_raw-*.root'))
 parts = sorted([int(re.search(r'sndsw_raw-(\d+)\.root', f).group(1)) for f in raw_files if re.search(r'sndsw_raw-(\d+)\.root', f)])

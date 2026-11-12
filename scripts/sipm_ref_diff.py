@@ -19,7 +19,8 @@ Reference time cut on t0^DS:
   - Category I   (run <= 5116 and 5175 <= run <= 5192) : 20.25 <= t0^DS <= 24.15 ns
   - Category II  (5117 <= run <= 5174 and 5193 <= run <= 5412) : 13.0 <= t0^DS <= 15.5 ns
   - Category III (all other cases)                      : 18.5 <= t0^DS <= 20.5 ns
-No restriction on SciFi reference time (t0^SF).
+Reference time cut on t0^SF:
+  - All Categories                                      : -0.5 <= t0^SF <= 6.0 ns
 
 Output ROOT File Structure:
   <catI | catII | catIII>/runXXXX/<detID_SiPM>/
@@ -59,6 +60,11 @@ def get_tds0_window(run_nr):
         return 13.0, 15.5
     else:
         return 18.5, 20.5
+
+
+def get_tsf0_window(run_nr=None):
+    """Returns (tsf0_min, tsf0_max) window for SciFi reference time."""
+    return -0.5, 6.0
 
 
 def parse_args():
@@ -221,6 +227,7 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
     mu_filter = M.MuFilter
     tdc2ns = analysis.TDC2ns
     tds0_min, tds0_max = get_tds0_window(run_nr)
+    tsf0_min, tsf0_max = get_tsf0_window(run_nr)
     category = get_run_category(run_nr)
 
     # Monkey-patch GetDSHaverage for safe DS horizontal time calculation
@@ -310,7 +317,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
     print(
         f" ~ Processing Run {run_nr} ({category}): {events_to_process:,} events "
-        f"[t0^DS cut: {tds0_min:.2f} <= t0^DS <= {tds0_max:.2f} ns]",
+        f"[t0^DS cut: {tds0_min:.2f} <= t0^DS <= {tds0_max:.2f} ns, "
+        f"t0^SF cut: {tsf0_min:.2f} <= t0^SF <= {tsf0_max:.2f} ns]",
         flush=True
     )
 
@@ -392,10 +400,20 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         if tds0_val is not None and (tds0_min <= tds0_val <= tds0_max):
             has_valid_ds = True
 
-        # 3. Extract SciFi Reference Time (no restriction)
+        # 3. Extract SciFi Reference Time and apply category window cut (-0.5 <= t0^SF <= 6.0 ns)
         tsf0 = analysis.GetScifiAverageTime(M.Scifi, event.Digi_ScifiHits, mode="tsf0")
-        has_valid_sf = (tsf0 is not None and tsf0 != -999.)
-        tsf0_val = tsf0 if has_valid_sf else None
+        has_valid_sf = False
+        tsf0_val = None
+        if isinstance(tsf0, (tuple, list)):
+            if tsf0[0] != -999.:
+                tsf0_val = tsf0[0]
+        elif tsf0 != -999.:
+            tsf0_val = tsf0
+
+        if tsf0_val is not None and (tsf0_min <= tsf0_val <= tsf0_max):
+            has_valid_sf = True
+        else:
+            tsf0_val = None
 
         if not has_valid_ds and not has_valid_sf:
             continue
@@ -580,7 +598,7 @@ def main():
     print(f" Break Event Limit : {args.break_events:,} events/run (0 = full run)")
     print(f" Number of Runs    : {len(runs_to_process)}")
     print(f" Parallel Workers  : {args.n_workers} processes")
-    print(" Reference Cut: Category-dependent t0^DS window applied")
+    print(" Reference Cut: Category-dependent t0^DS window & t0^SF window (-0.5, 6.0 ns) applied")
     print("======================================================================")
 
     import ROOT

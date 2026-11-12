@@ -31,7 +31,12 @@ echo " Output Partition Progress on EOS (${OUT_PARTS}):"
 if [ -n "$1" ]; then
     RUN="$1"
     RUN_PARTS=$(find "${OUT_PARTS}" -path "*/run${RUN}/part_*.root" 2>/dev/null | wc -l)
-    TOTAL_RUN=$(grep -c "^${RUN} " "${DIR}/args_partitions_all.txt" 2>/dev/null || echo 0)
+    TOTAL_RUN=0
+    if [ -f "${DIR}/args_run${RUN}.txt" ]; then
+        TOTAL_RUN=$(wc -l < "${DIR}/args_run${RUN}.txt")
+    elif grep -q "^${RUN} " "${DIR}/args_partitions_all.txt" 2>/dev/null; then
+        TOTAL_RUN=$(grep -c "^${RUN} " "${DIR}/args_partitions_all.txt")
+    fi
     echo " Run ${RUN} Progress : ${RUN_PARTS} / ${TOTAL_RUN} partitions completed"
 fi
 echo " Category I  : ${DONE_CATI} / ${TOTAL_CATI} completed"
