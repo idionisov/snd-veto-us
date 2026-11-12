@@ -279,12 +279,28 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         if channel_key not in hist_cache:
             hist_cache[channel_key] = {}
         if hist_type not in hist_cache[channel_key]:
+            det_id = int(channel_key.split("_")[0])
+            subsys = det_id // 10000
+
+            if subsys == 1:
+                # Veto: bar extent ~ [-48, -7] cm
+                # x range: (-53, -7) with 1 cm bins (46 bins)
+                # y range: (-27.5, 27.5) with 0.25 ns bins (220 bins)
+                nbins_x, x_min, x_max = 46, -53.0, -7.0
+                nbins_y, y_min, y_max = 220, -27.5, 27.5
+            else:
+                # Upstream: bar extent ~ [-79, +3] cm
+                # x range: (-60, 0) with 1 cm bins (60 bins)
+                # y range: (-27.5, 27.5) with 0.25 ns bins (220 bins)
+                nbins_x, x_min, x_max = 60, -60.0, 0.0
+                nbins_y, y_min, y_max = 220, -27.5, 27.5
+
             if hist_type == "dt-DS":
                 title = f"{channel_key} t_{{0}}^{{DS}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{DS}} - t_{{SiPM}} [ns]"
-                h = ROOT.TH2F(f"dt-DS_{channel_key}", title, 100, -80, 20, 200, -50, 50)
+                h = ROOT.TH2F(f"dt-DS_{channel_key}", title, nbins_x, x_min, x_max, nbins_y, y_min, y_max)
             else:
                 title = f"{channel_key} t_{{0}}^{{SF}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{SF}} - t_{{SiPM}} [ns]"
-                h = ROOT.TH2F(f"dt-SF_{channel_key}", title, 100, -80, 20, 200, -50, 50)
+                h = ROOT.TH2F(f"dt-SF_{channel_key}", title, nbins_x, x_min, x_max, nbins_y, y_min, y_max)
             h.SetDirectory(0)
             hist_cache[channel_key][hist_type] = h
         return hist_cache[channel_key][hist_type]
