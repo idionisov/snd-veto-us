@@ -55,9 +55,19 @@ def get_tds0_window(run_nr):
     """Returns (tds0_min, tds0_max) window for the given run."""
     cat = get_run_category(run_nr)
     if cat == "catI":
-        return 20.25, 24.15
+        # Category I has 3 clock phase periods:
+        # Region 1 (early 2022): run <= 4819 -> peak ~15.7 ns
+        # Region 2 (late 2022): 4820 <= run <= 5116 -> peak ~18.2 ns
+        # Region 3 (post-interruption): 5175 <= run <= 5192 -> peak ~7.4 ns
+        if run_nr <= 4819:
+            return 14.0, 17.5
+        elif run_nr <= 5116:
+            return 16.5, 20.0
+        elif 5175 <= run_nr <= 5192:
+            return 5.5, 9.0
+        return 14.0, 17.5
     elif cat == "catII":
-        return 13.0, 15.5
+        return 11.0, 16.0
     else:
         return 18.5, 20.5
 
