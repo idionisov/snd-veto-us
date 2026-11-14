@@ -74,6 +74,10 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, fit_min=-55.0, fit_max=-5.0, min_sl
     if gr.GetN() < 5:
         return None
 
+    x_pts = np.array([gr.GetPointX(i) for i in range(gr.GetN())], dtype=float)
+    y_pts = np.array([gr.GetPointY(i) for i in range(gr.GetN())], dtype=float)
+    ey_pts = np.array([gr.GetErrorY(i) for i in range(gr.GetN())], dtype=float)
+
     func = ROOT.TF1("fit_pol1_temp", "pol1", fit_min, fit_max)
     gr.Fit(func, "QNS0R")
 
@@ -146,12 +150,169 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, fit_min=-55.0, fit_max=-5.0, min_sl
         "ndf": int(ndf),
         "chi2_ndf": float(chi2 / ndf),
         "n_points": int(gr.GetN()),
+        "x_arr": x_pts,
+        "y_arr": y_pts,
+        "ey_arr": ey_pts,
     }
 
 
-def fit_file(root_path: str, verbose: bool = False):
+def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: float, fit_max: float):
+    """
+    Constructs a 2-pad canvas containing:
+      Top pad: 2D histogram + slice data points (stat error) + total uncertainty band + linear fit line.
+      Bottom pad: Fit / Data with separable statistical and systematic error bars adding up to total uncertainty.
+    """
+    ROOT.TH1.AddDirectory(False)
+    cname = f"c_cscint_{ref}_{fixed_ch}"
+    c = ROOT.TCanvas(cname, f"c_scint Fit - Channel {fixed_ch} ({ref} Reference)", 950, 800)
+
+    pad1 = ROOT.TPad(f"pad1_{ref}_{fixed_ch}", "Upper Pad", 0.0, 0.28, 1.0, 1.0)
+    pad2 = ROOT.TPad(f"pad2_{ref}_{fixed_ch}", "Lower Pad", 0.0, 0.0, 1.0, 0.28)
+    ROOT.SetOwnership(pad1, False)
+    ROOT.SetOwnership(pad2, False)
+
+    pad1.SetBottomMargin(0.02)
+    pad1.SetLeftMargin(0.12)
+    pad1.SetRightMargin(0.12)
+    pad1.SetGrid()
+
+    pad2.SetTopMargin(0.03)
+    pad2.SetBottomMargin(0.32)
+    pad2.SetLeftMargin(0.12)
+    pad2.SetRightMargin(0.12)
+    pad2.SetGrid()
+
+    pad1.Draw()
+    pad2.Draw()
+
+    x_arr = fit_res["x_arr"]
+    y_arr = fit_res["y_arr"]
+    ey_arr = fit_res["ey_arr"]
+    n_pts = len(x_arr)
+
+    c_scint = fit_res["c_scint"]
+    delta_c_fit = fit_res["delta_c_fit"]
+    delta_c_syst = fit_res["delta_c_syst"]
+    slope = fit_res["slope"]
+    intercept = fit_res["intercept"]
+    chi2 = fit_res["chi2"]
+    ndf = fit_res["ndf"]
+
+    # Calculate point-by-point systematic uncertainty and total uncertainty
+    sigma_m_syst = abs(delta_c_syst / (c_scint ** 2)) if c_scint > 0 else 0.0
+    x_mean = np.mean(x_arr) if n_pts > 0 else 0.0
+    w_sum = np.sum(1.0 / (ey_arr ** 2)) if n_pts > 0 else 1.0
+    sigma_floor = np.sqrt(max(0.0, (chi2 - ndf) / w_sum)) if ndf > 0 else 0.0
+    sigma_syst_arr = np.sqrt((sigma_m_syst * (x_arr - x_mean)) ** 2 + sigma_floor ** 2)
+    ey_tot = np.sqrt(ey_arr ** 2 + sigma_syst_arr ** 2)
+
+    dx_band = np.full(n_pts, 0.5)
+    x_range_min = fit_min - 3.0
+    x_range_max = fit_max + 3.0
+
+    # Top Pad: 2D distribution + Slice Data + Fit
+    pad1.cd()
+    ROOT.gStyle.SetPalette(ROOT.kRainBow)
+    h2_clone = h2.Clone(f"h2_{ref}_{fixed_ch}_clone")
+    ROOT.SetOwnership(h2_clone, False)
+    h2_clone.SetDirectory(0)
+    h2_clone.SetTitle("")
+    h2_clone.GetXaxis().SetLabelSize(0)
+    h2_clone.GetXaxis().SetTitle("")
+    h2_clone.GetYaxis().SetTitle(f"t_{{0}}^{{{ref}}} - t_{{SiPM}} [ns]")
+    h2_clone.GetYaxis().SetTitleSize(0.048)
+    h2_clone.GetYaxis().SetTitleOffset(1.10)
+    h2_clone.GetYaxis().SetLabelSize(0.042)
+    h2_clone.GetXaxis().SetRangeUser(x_range_min, x_range_max)
+    h2_clone.Draw("COLZ")
+
+    g_data_tot = ROOT.TGraphErrors(n_pts, x_arr, y_arr, dx_band, ey_tot)
+    g_data_tot.SetName(f"g_data_total_{ref}_{fixed_ch}")
+    ROOT.SetOwnership(g_data_tot, False)
+    g_data_tot.SetFillColor(ROOT.kBlue + 2)
+    g_data_tot.SetFillStyle(3004)
+    g_data_tot.SetLineColor(ROOT.kBlue + 2)
+    g_data_tot.Draw("E2 SAME")
+
+    g_data_stat = ROOT.TGraphErrors(n_pts, x_arr, y_arr, np.zeros(n_pts), ey_arr)
+    g_data_stat.SetName(f"g_data_stat_{ref}_{fixed_ch}")
+    ROOT.SetOwnership(g_data_stat, False)
+    g_data_stat.SetMarkerStyle(20)
+    g_data_stat.SetMarkerSize(0.6)
+    g_data_stat.SetMarkerColor(ROOT.kBlack)
+    g_data_stat.SetLineColor(ROOT.kBlack)
+    g_data_stat.Draw("PE SAME")
+
+    fit_func = ROOT.TF1(f"func_{ref}_{fixed_ch}", "pol1", fit_min, fit_max)
+    fit_func.SetParameters(intercept, slope)
+    ROOT.SetOwnership(fit_func, False)
+    fit_func.SetLineColor(ROOT.kRed + 1)
+    fit_func.SetLineWidth(2)
+    fit_func.Draw("SAME")
+
+    leg = ROOT.TLegend(0.15, 0.68, 0.65, 0.90)
+    leg.SetBorderSize(1)
+    leg.SetFillColorAlpha(ROOT.kWhite, 0.88)
+    leg.SetTextFont(42)
+    leg.SetTextSize(0.030)
+    leg.SetHeader(f"Channel {fixed_ch} ({ref} Reference)", "C")
+    leg.AddEntry(g_data_stat, "Data (Stat. error #sigma_{fit})", "lep")
+    leg.AddEntry(g_data_tot, "Total Uncertainty (#sigma_{fit} #oplus #sigma_{syst})", "f")
+    leg.AddEntry(fit_func, f"Fit: c_{{scint}} = {c_scint:.2f} #pm {delta_c_fit:.2f} (fit) #pm {delta_c_syst:.2f} (syst) cm/ns", "l")
+    leg.AddEntry("", f"#chi^{{2}}/ndf = {chi2:.1f}/{ndf} ({chi2/ndf:.2f}), c_{{scint}}^{{tot}} = {c_scint:.2f} #pm {fit_res['delta_c_tot']:.2f} cm/ns", "")
+    ROOT.SetOwnership(leg, False)
+    leg.Draw()
+
+    # Bottom Pad: Fit / Data
+    pad2.cd()
+    y_fit_pts = slope * x_arr + intercept
+    ratio = y_fit_pts / y_arr
+    eratio_stat = np.abs(ratio / y_arr) * ey_arr
+    eratio_tot = np.abs(ratio / y_arr) * ey_tot
+
+    g_ratio_tot = ROOT.TGraphErrors(n_pts, x_arr, ratio, dx_band, eratio_tot)
+    g_ratio_tot.SetName(f"g_ratio_total_{ref}_{fixed_ch}")
+    ROOT.SetOwnership(g_ratio_tot, False)
+    g_ratio_tot.SetTitle(";x_{predicted} [cm];Fit / Data")
+    g_ratio_tot.SetFillColor(ROOT.kBlue + 2)
+    g_ratio_tot.SetFillStyle(3004)
+    g_ratio_tot.SetLineColor(ROOT.kBlue + 2)
+    g_ratio_tot.GetXaxis().SetRangeUser(x_range_min, x_range_max)
+    g_ratio_tot.GetYaxis().SetRangeUser(0.85, 1.15)
+    g_ratio_tot.GetXaxis().SetTitleSize(0.12)
+    g_ratio_tot.GetXaxis().SetLabelSize(0.09)
+    g_ratio_tot.GetXaxis().SetTitleOffset(0.95)
+    g_ratio_tot.GetYaxis().SetTitleSize(0.11)
+    g_ratio_tot.GetYaxis().SetLabelSize(0.08)
+    g_ratio_tot.GetYaxis().SetTitleOffset(0.48)
+    g_ratio_tot.GetYaxis().SetNdivisions(505)
+    g_ratio_tot.Draw("AE2")
+
+    g_ratio_stat = ROOT.TGraphErrors(n_pts, x_arr, ratio, np.zeros(n_pts), eratio_stat)
+    g_ratio_stat.SetName(f"g_ratio_stat_{ref}_{fixed_ch}")
+    ROOT.SetOwnership(g_ratio_stat, False)
+    g_ratio_stat.SetMarkerStyle(20)
+    g_ratio_stat.SetMarkerSize(0.5)
+    g_ratio_stat.SetMarkerColor(ROOT.kBlack)
+    g_ratio_stat.SetLineColor(ROOT.kBlack)
+    g_ratio_stat.Draw("PE SAME")
+
+    line1 = ROOT.TLine(x_range_min, 1.0, x_range_max, 1.0)
+    ROOT.SetOwnership(line1, False)
+    line1.SetLineColor(ROOT.kRed + 1)
+    line1.SetLineStyle(2)
+    line1.SetLineWidth(2)
+    line1.Draw("SAME")
+
+    c.Update()
+    return c
+
+
+def fit_file(root_path: str, save_canvas: bool = True, verbose: bool = False):
     """
     Fits c_scint for all SiPM channels in root_path.
+    If save_canvas=True, opens root_path in UPDATE mode and stores a 2-pad fit canvas
+    into each channel directory.
     Returns:
       {
         "DS": { "<detID_sipm>": { "sipm": <int>, "c_scint": ..., "delta_c_fit": ..., "delta_c_syst": ..., "delta_c_tot": ... } },
@@ -159,7 +320,8 @@ def fit_file(root_path: str, verbose: bool = False):
         "summary": { "DS": { "mean": ..., "std": ... }, "SF": { ... } }
       }
     """
-    f = ROOT.TFile.Open(root_path, "READ")
+    mode = "UPDATE" if save_canvas else "READ"
+    f = ROOT.TFile.Open(root_path, mode)
     if not f or f.IsZombie():
         print(f"[ERROR] Cannot open ROOT file: {root_path}", file=sys.stderr)
         return None
@@ -187,6 +349,17 @@ def fit_file(root_path: str, verbose: bool = False):
         if h2_ds and h2_ds.InheritsFrom("TH2"):
             res_ds = fit_single_2d_hist(h2_ds, ref="DS", sipm=sipm, fit_min=-55.0, fit_max=-5.0, min_slice_entries=15)
             if res_ds is not None:
+                if save_canvas:
+                    canv_ds = build_cscint_canvas(h2_ds, k, "DS", res_ds, fit_min=-55.0, fit_max=-5.0)
+                    ch_dir = f.GetDirectory(k)
+                    if not ch_dir:
+                        ch_dir = f.mkdir(k)
+                    ch_dir.WriteObject(canv_ds, canv_ds.GetName(), "kOverwrite")
+                    canv_ds.Close()
+                    del canv_ds
+
+                for arr_k in ("x_arr", "y_arr", "ey_arr"):
+                    res_ds.pop(arr_k, None)
                 res_ds["sipm"] = sipm
                 res_ds["detID"] = detID
                 results["DS"][k] = res_ds
@@ -196,6 +369,17 @@ def fit_file(root_path: str, verbose: bool = False):
         if h2_sf and h2_sf.InheritsFrom("TH2"):
             res_sf = fit_single_2d_hist(h2_sf, ref="SF", sipm=sipm, fit_min=-44.0, fit_max=-8.0, min_slice_entries=15)
             if res_sf is not None:
+                if save_canvas:
+                    canv_sf = build_cscint_canvas(h2_sf, k, "SF", res_sf, fit_min=-44.0, fit_max=-8.0)
+                    ch_dir = f.GetDirectory(k)
+                    if not ch_dir:
+                        ch_dir = f.mkdir(k)
+                    ch_dir.WriteObject(canv_sf, canv_sf.GetName(), "kOverwrite")
+                    canv_sf.Close()
+                    del canv_sf
+
+                for arr_k in ("x_arr", "y_arr", "ey_arr"):
+                    res_sf.pop(arr_k, None)
                 res_sf["sipm"] = sipm
                 res_sf["detID"] = detID
                 results["SF"][k] = res_sf
@@ -233,12 +417,14 @@ def main():
     parser.add_argument("-i", "--input", type=str, help="Single input merged ROOT file")
     parser.add_argument("-o", "--output", type=str, help="Output JSON file or directory")
     parser.add_argument("--input-dir", type=str, help="Directory containing merged run ROOT files")
+    parser.add_argument("--no-canvas", dest="save_canvas", action="store_false", default=True,
+                        help="Do not store fit canvases in the input ROOT file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print progress")
     args = parser.parse_args()
 
     if args.input:
         out_json = args.output if args.output else args.input.replace(".root", "_cscint.json")
-        res = fit_file(args.input, verbose=args.verbose)
+        res = fit_file(args.input, save_canvas=args.save_canvas, verbose=args.verbose)
         if res is not None:
             os.makedirs(os.path.dirname(os.path.abspath(out_json)), exist_ok=True)
             with open(out_json, "w") as jf:
@@ -247,6 +433,8 @@ def main():
             print(f"[SUCCESS] Saved fit results to {out_json}")
             if ds_sum["n_channels"] > 0:
                 print(f"  -> DS: {ds_sum['n_channels']} channels, c_scint = {ds_sum['weighted_mean']:.2f} +/- {ds_sum['weighted_sem']:.2f} cm/ns (mean={ds_sum['mean']:.2f})")
+            if args.save_canvas:
+                print(f"[SUCCESS] Saved fit canvases into input ROOT file {args.input}")
 
     elif args.input_dir:
         out_dir = args.output if args.output else os.path.join(args.input_dir, "fits")
@@ -263,7 +451,7 @@ def main():
             except ValueError:
                 continue
 
-            res = fit_file(fpath, verbose=args.verbose)
+            res = fit_file(fpath, save_canvas=args.save_canvas, verbose=args.verbose)
             if res is None:
                 continue
 
