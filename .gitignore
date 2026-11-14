@@ -48,6 +48,7 @@ G__*.*
 # Python & Virtual Environments
 # ---------------------
 __pycache__/
+snd/__pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
