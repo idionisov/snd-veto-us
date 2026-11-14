@@ -226,35 +226,46 @@ def run_worker(run_nr, partition, out_file, cscint_file=None, placeholder_cscint
         if mode == "tds0":
             stations = {i.GetDetectorID(): i for i in hits}
             total = {i: 0 for i in range(4)}
-            for s in range(4):
-                for b in range(60):
-                    detID = 30000 + s * 1000 + b
-                    if detID in stations:
-                        total[s] += 1
-            sum_total = 0.0
-            counter_total = 0
-            for i in range(1, 4):
-                if total[i] != 1:
+            counter = {i: 0 for i in range(4)}
+
+            theTrack = getattr(self, "current_ds_track", None)
+            if theTrack is None:
+                for trk in self.task.M.Reco_MuonTracks:
+                    tt = trk.getTrackType() if hasattr(trk, "getTrackType") else trk.GetUniqueID()
+                    if tt == 3:
+                        theTrack = trk
+                        break
+            if theTrack is None:
+                return -999.
+
+            nM = theTrack.getNumPointsWithMeasurement()
+
+            for n in range(nM):
+                pt = theTrack.getPointWithMeasurement(n)
+                W = pt.getRawMeasurement()
+                detID = W.getDetId()
+                if detID not in stations:
                     continue
-                for b in range(60):
-                    detID = 30000 + i * 1000 + b
-                    if detID not in stations:
-                        continue
-                    hit = stations[detID]
-                    s, plane, bar = self.parseDetID(detID)
-                    if not self.IsDSHorizontal(detID):
-                        continue
-                    times = hit.GetAllTimes()
-                    if len(times) == 0:
-                        continue
-                    hit_t = [t[1] * tdc2ns for t in times if t[0] != 0]
-                    if not hit_t:
-                        hit_t = [times[0][1] * tdc2ns]
-                    sum_total += np.mean(hit_t)
-                    counter_total += 1
+                s, p, b = self.parseDetID(detID)
+                if s != 3:
+                    continue
+                trackHit = stations[detID]
+                tdcs = trackHit.GetAllTimes()
+                if not all([p in (0, 1, 2), b < 60, len(tdcs) == 2]):
+                    continue
+
+                for item in tdcs:
+                    SiPM, clock = item
+                    dscorrectedtime = self.task.M.MuFilter.GetCorrectedTime(detID, SiPM, clock * self.TDC2ns, 0)
+                    total[p] += dscorrectedtime
+                    counter[p] += 1
+
+            sum_total = total[1] + total[2]
+            counter_total = counter[1] + counter[2]
             if counter_total == 0:
                 return -999.
             return sum_total / counter_total, counter_total
+
         return orig_GetDSHaverage(self, hits, mode=mode)
 
     af.Analysis.GetDSHaverage = safe_GetDSHaverage
@@ -334,10 +345,12 @@ def run_worker(run_nr, partition, out_file, cscint_file=None, placeholder_cscint
             trk_type = trk.getTrackType() if hasattr(trk, "getTrackType") else trk.GetUniqueID()
             if trk_type == 3:
                 if best_ds is None or chi2ndf < best_ds["chi2ndf"]:
-                    best_ds = {"pos": pos, "mom": mom, "chi2ndf": chi2ndf}
+                    best_ds = {"pos": pos, "mom": mom, "chi2ndf": chi2ndf, "track": trk}
 
         if not best_ds:
             continue
+
+        analysis.current_ds_track = best_ds["track"]
 
         # DS reference time
         tds0 = analysis.GetDSHaverage(event.Digi_MuFilterHits, mode="tds0")
