@@ -56,7 +56,7 @@ mkdir -p "${OUT_RUNS}" "${OUT_CATS}"
 
 CATS_TO_PROCESS=()
 if [ "${CATEGORY}" = "all" ]; then
-    CATS_TO_PROCESS=("catI" "catII")
+    CATS_TO_PROCESS=("catI" "catII" "catIII")
 else
     CATS_TO_PROCESS=("${CATEGORY}")
 fi

@@ -3,8 +3,9 @@
 generate_args.py
 ----------------
 Generates HTCondor arguments for SiPM reference time difference (cscint) extraction per partition.
-Filters 2022 runs (Category I & II, >3M entries, nonzero luminosity, is_physics_collision == True)
-and scans existing raw partition files on EOS, or filters fast from existing full argument files.
+Filters runs by Category:
+  - Category I & II (2022): >3M entries, nonzero luminosity, is_physics_collision == True
+  - Category III (2023-2026): 10 runs with the most entries per year, nonzero luminosity, is_physics_collision == True
 
 Supports limiting partitions per run via -p / --max-partitions (e.g. -p 15).
 
@@ -12,6 +13,8 @@ Outputs:
   - args_partitions_all[_max<P>].txt
   - args_partitions_catI[_max<P>].txt
   - args_partitions_catII[_max<P>].txt
+  - args_partitions_catIII[_max<P>].txt
+  - args_partitions_catIII_<YYYY>[_max<P>].txt
 
 Format per line:
   <RUN> <PARTITION> <CATEGORY>
@@ -26,8 +29,6 @@ import pandas as pd
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(REPO_ROOT, "runs_2022.csv")
-DATA_DIR = "/eos/experiment/sndlhc/convertedData/physics/2022"
 PART_PATTERN = re.compile(r"sndsw_raw-(\d+)\.root")
 
 
@@ -37,7 +38,24 @@ def norm_cat(c):
         return "catI"
     if c_str in ("II", "CATII"):
         return "catII"
+    if c_str in ("III", "CATIII"):
+        return "catIII"
     return None
+
+
+def get_run_dir(year: int, run: int) -> str:
+    """Resolves directory path on EOS for a given run and year."""
+    if year == 2022:
+        return f"/eos/experiment/sndlhc/convertedData/physics/2022/run_{run:06d}"
+    elif year == 2023:
+        return f"/eos/experiment/sndlhc/convertedData/physics/2023/run_{run:06d}"
+    elif year == 2024:
+        sub = glob.glob(f"/eos/experiment/sndlhc/convertedData/physics/2024/run_24*/run_{run:06d}")
+        return sub[0] if sub else ""
+    elif year in (2025, 2026):
+        sub = glob.glob(f"/eos/experiment/sndlhc/convertedData/physics/{year}/run_2*/run_{run:06d}")
+        return sub[0] if sub else ""
+    return ""
 
 
 def scan_partitions(run_dir: str):
@@ -62,7 +80,7 @@ def main():
         "--repo-root",
         type=str,
         default=REPO_ROOT,
-        help=f"Root of repo containing runs_2022.csv (default: {REPO_ROOT})"
+        help=f"Root of repo containing runs_YYYY.csv (default: {REPO_ROOT})"
     )
     parser.add_argument(
         "-p", "--max-partitions",
@@ -71,16 +89,17 @@ def main():
         help="Maximum number of partitions per run (default: None, all partitions)"
     )
     parser.add_argument(
+        "-t", "--top-runs",
+        type=int,
+        default=10,
+        help="Number of highest-entries collision runs to select per year for Cat III (default: 10)"
+    )
+    parser.add_argument(
         "-c", "--category",
         type=str,
         default="all",
-        choices=["all", "catI", "catII"],
+        choices=["all", "catI", "catII", "catIII"],
         help="Category to process (default: all)"
-    )
-    parser.add_argument(
-        "--from-existing",
-        action="store_true",
-        help="Fast mode: filter from existing full args_partitions_*.txt files instead of rescanning EOS"
     )
     parser.add_argument(
         "--suffix",
@@ -94,71 +113,75 @@ def main():
 
     catI_jobs = []
     catII_jobs = []
+    catIII_jobs_by_year = {y: [] for y in (2023, 2024, 2025, 2026)}
+    catIII_jobs = []
 
-    if args.from_existing:
-        print("[INFO] Fast mode: reading from existing full partition args files...")
+    # 1. 2022 runs (Category I & II)
+    if args.category in ("all", "catI", "catII"):
+        csv_2022 = os.path.join(args.repo_root, "runs_2022.csv")
+        if os.path.exists(csv_2022):
+            df_2022 = pd.read_csv(csv_2022)
+            df_2022["cat_norm"] = df_2022["category"].apply(norm_cat)
+            allowed_cats = ["catI", "catII"] if args.category == "all" else [args.category]
+            mask_2022 = (
+                df_2022["cat_norm"].isin(allowed_cats) &
+                (df_2022["entries"] > 3000000) &
+                (df_2022["luminosity_pb"] > 0) &
+                (df_2022["is_physics_collision"] == True)
+            )
+            qual_2022 = df_2022[mask_2022].sort_values("run_number")
+            print(f"Loaded {len(qual_2022)} qualifying 2022 runs (>3M entries, nonzero lumi).")
 
-        def filter_file(fpath):
-            if not os.path.exists(fpath):
-                return []
-            run_map = defaultdict(list)
-            with open(fpath) as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) >= 3:
-                        run_map[parts[0]].append(line)
-            out_lines = []
-            for r in sorted(run_map.keys(), key=lambda x: int(x)):
-                lines = run_map[r]
+            for _, row in qual_2022.iterrows():
+                run = int(row["run_number"])
+                cat = row["cat_norm"]
+                run_dir = get_run_dir(2022, run)
+                partitions = scan_partitions(run_dir)
+                if not partitions:
+                    continue
                 if args.max_partitions is not None:
-                    lines = lines[:args.max_partitions]
-                out_lines.extend(lines)
-            return out_lines
+                    partitions = partitions[:args.max_partitions]
+                for p in partitions:
+                    line = f"{run} {p} {cat}\n"
+                    if cat == "catI":
+                        catI_jobs.append(line)
+                    elif cat == "catII":
+                        catII_jobs.append(line)
 
-        if args.category in ("all", "catI"):
-            catI_jobs = filter_file(os.path.join(BASE_DIR, "args_partitions_catI.txt"))
-        if args.category in ("all", "catII"):
-            catII_jobs = filter_file(os.path.join(BASE_DIR, "args_partitions_catII.txt"))
-
-    else:
-        csv_file = os.path.join(args.repo_root, "runs_2022.csv")
-        if not os.path.exists(csv_file):
-            raise FileNotFoundError(f"Runs catalog not found: {csv_file}")
-
-        df = pd.read_csv(csv_file)
-        df["cat_norm"] = df["category"].apply(norm_cat)
-
-        allowed_cats = ["catI", "catII"] if args.category == "all" else [args.category]
-        mask = (
-            df["cat_norm"].isin(allowed_cats) &
-            (df["entries"] > 3000000) &
-            (df["luminosity_pb"] > 0) &
-            (df["is_physics_collision"] == True)
-        )
-        qualifying = df[mask].sort_values("run_number")
-        print(f"Loaded {len(qualifying)} qualifying runs from {csv_file}.")
-
-        for _, row in qualifying.iterrows():
-            run = int(row["run_number"])
-            cat = row["cat_norm"]
-            run_dir = os.path.join(DATA_DIR, f"run_{run:06d}")
-
-            partitions = scan_partitions(run_dir)
-            if not partitions:
-                print(f"[WARNING] No raw files found in {run_dir}")
+    # 2. 2023-2026 runs (Category III)
+    if args.category in ("all", "catIII"):
+        for y in (2023, 2024, 2025, 2026):
+            csv_y = os.path.join(args.repo_root, f"runs_{y}.csv")
+            if not os.path.exists(csv_y):
+                print(f"[WARNING] Catalog not found: {csv_y}")
                 continue
+            df_y = pd.read_csv(csv_y)
+            mask_y = (
+                (df_y["is_physics_collision"] == True) &
+                (df_y["luminosity_pb"] > 0)
+            )
+            qual_y = (
+                df_y[mask_y]
+                .sort_values("entries", ascending=False)
+                .head(args.top_runs)
+                .sort_values("run_number")
+            )
+            print(f"Year {y}: Loaded {len(qual_y)} qualifying Category III runs (top {args.top_runs} by entries).")
 
-            if args.max_partitions is not None:
-                partitions = partitions[:args.max_partitions]
+            for _, row in qual_y.iterrows():
+                run = int(row["run_number"])
+                run_dir = get_run_dir(y, run)
+                partitions = scan_partitions(run_dir)
+                if not partitions:
+                    continue
+                if args.max_partitions is not None:
+                    partitions = partitions[:args.max_partitions]
+                for p in partitions:
+                    line = f"{run} {p} catIII\n"
+                    catIII_jobs_by_year[y].append(line)
+                    catIII_jobs.append(line)
 
-            for p in partitions:
-                line = f"{run} {p} {cat}\n"
-                if cat == "catI":
-                    catI_jobs.append(line)
-                elif cat == "catII":
-                    catII_jobs.append(line)
-
-    all_jobs = catI_jobs + catII_jobs
+    all_jobs = catI_jobs + catII_jobs + catIII_jobs
 
     written_files = []
     if args.category == "all":
@@ -178,6 +201,18 @@ def main():
         with open(path_catII, "w") as f:
             f.writelines(catII_jobs)
         written_files.append(("Category II (2022)", path_catII, len(catII_jobs)))
+
+    if args.category in ("all", "catIII"):
+        path_catIII = os.path.join(BASE_DIR, f"args_partitions_catIII{suffix}.txt")
+        with open(path_catIII, "w") as f:
+            f.writelines(catIII_jobs)
+        written_files.append(("Category III (all)", path_catIII, len(catIII_jobs)))
+
+        for y in (2023, 2024, 2025, 2026):
+            path_y = os.path.join(BASE_DIR, f"args_partitions_catIII_{y}{suffix}.txt")
+            with open(path_y, "w") as f:
+                f.writelines(catIII_jobs_by_year[y])
+            written_files.append((f"  Category III ({y})", path_y, len(catIII_jobs_by_year[y])))
 
     print("======================================================================")
     print(" HTCondor Partition Job Lists Generated:")

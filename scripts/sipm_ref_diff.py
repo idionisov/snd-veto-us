@@ -69,7 +69,7 @@ def get_tds0_window(run_nr):
     elif cat == "catII":
         return 11.0, 16.0
     else:
-        return 18.5, 20.5
+        return 11.0, 23.5
 
 
 def get_tsf0_window(run_nr=None):

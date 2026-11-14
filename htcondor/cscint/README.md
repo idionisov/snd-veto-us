@@ -54,3 +54,21 @@ Once jobs finish, run `merge_cscint.sh`:
 # Force re-merge
 ./merge_cscint.sh -f
 ```
+
+## Submitting Category III Jobs (2023 - 2026, Top 10 Runs, Max 15 Partitions/Run)
+
+```bash
+cd htcondor/cscint
+
+# Submit all 4 years (600 jobs in 4 clusters of 150)
+./submit_top10_15p.sh
+
+# Or submit a specific year only (150 jobs):
+./submit_top10_15p.sh 2023
+./submit_top10_15p.sh 2024
+./submit_top10_15p.sh 2025
+./submit_top10_15p.sh 2026
+
+# Or submit all 600 jobs in a single cluster:
+./submit_top10_15p.sh --single
+```
