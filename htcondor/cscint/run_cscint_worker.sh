@@ -59,6 +59,7 @@ trap 'rm -rf "${SCRATCH_DIR}"' EXIT
 
 TEMP_OUT="${SCRATCH_DIR}/part_${PARTITION}.root"
 PY_SCRIPT="/afs/cern.ch/work/i/idioniso/snd-veto-us/scripts/sipm_ref_diff.py"
+WINDOWS_JSON="/afs/cern.ch/work/i/idioniso/snd-veto-us/config/ref_time_windows.json"
 
 echo " ~ Processing partition ${PARTITION} of run ${RUN} in scratch: ${SCRATCH_DIR}"
 
@@ -67,6 +68,7 @@ python3 -X faulthandler "${PY_SCRIPT}" \
     -r "${RUN}" \
     -P "${PARTITION}" \
     --break 0 \
+    --windows-json "${WINDOWS_JSON}" \
     -o "${TEMP_OUT}"
 
 # 4. Verify output file
