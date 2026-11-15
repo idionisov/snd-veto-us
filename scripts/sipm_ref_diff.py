@@ -30,6 +30,7 @@ Output ROOT File Structure:
 
 import os
 import sys
+import json
 import tempfile
 import argparse
 import subprocess
@@ -39,6 +40,29 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+
+_DEFAULT_WINDOWS_JSON = os.path.join(_REPO_ROOT, "config", "ref_time_windows.json")
+_WINDOWS_CACHE = None
+
+
+def get_ref_windows_cache(json_path=None):
+    global _WINDOWS_CACHE
+    if _WINDOWS_CACHE is None:
+        target = json_path or _DEFAULT_WINDOWS_JSON
+        if not os.path.exists(target):
+            candidate = os.path.join(_REPO_ROOT, "config", "ref_time_windows.json")
+            if os.path.exists(candidate):
+                target = candidate
+        if os.path.exists(target):
+            try:
+                with open(target, "r") as f:
+                    _WINDOWS_CACHE = json.load(f)
+            except Exception as e:
+                print(f"[WARNING] Could not load reference windows from {target}: {e}", file=sys.stderr)
+                _WINDOWS_CACHE = {}
+        else:
+            _WINDOWS_CACHE = {}
+    return _WINDOWS_CACHE
 
 
 def get_run_category(run_nr):
@@ -51,14 +75,16 @@ def get_run_category(run_nr):
         return "catIII"
 
 
-def get_tds0_window(run_nr):
+def get_tds0_window(run_nr, json_path=None):
     """Returns (tds0_min, tds0_max) window for the given run."""
+    windows = get_ref_windows_cache(json_path)
+    win = windows.get(str(run_nr))
+    if win and win.get("ds_t_min") is not None and win.get("ds_t_max") is not None:
+        return float(win["ds_t_min"]), float(win["ds_t_max"])
+
+    # Fallback to category-based window if run not in JSON
     cat = get_run_category(run_nr)
     if cat == "catI":
-        # Category I has 3 clock phase periods:
-        # Region 1 (early 2022): run <= 4819 -> peak ~15.7 ns
-        # Region 2 (late 2022): 4820 <= run <= 5116 -> peak ~18.2 ns
-        # Region 3 (post-interruption): 5175 <= run <= 5192 -> peak ~7.4 ns
         if run_nr <= 4819:
             return 14.0, 17.5
         elif run_nr <= 5116:
@@ -72,8 +98,13 @@ def get_tds0_window(run_nr):
         return 11.0, 23.5
 
 
-def get_tsf0_window(run_nr=None):
+def get_tsf0_window(run_nr=None, json_path=None):
     """Returns (tsf0_min, tsf0_max) window for SciFi reference time."""
+    if run_nr is not None:
+        windows = get_ref_windows_cache(json_path)
+        win = windows.get(str(run_nr))
+        if win and win.get("sf_t_min") is not None and win.get("sf_t_max") is not None:
+            return float(win["sf_t_min"]), float(win["sf_t_max"])
     return -0.5, 6.0
 
 
@@ -137,6 +168,13 @@ def parse_args():
         default=False,
         help="Force reprocessing of runs already present in output file"
     )
+    parser.add_argument(
+        "--windows-json",
+        dest="windows_json",
+        type=str,
+        default=_DEFAULT_WINDOWS_JSON,
+        help="Path to precalculated reference windows JSON (default: config/ref_time_windows.json)"
+    )
     # Internal worker flags
     parser.add_argument(
         "--worker",
@@ -155,7 +193,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None):
+def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, windows_json=None):
     """Processes a single run partition in an isolated subprocess."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
@@ -236,8 +274,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
     nav = ROOT.gGeoManager.GetCurrentNavigator()
     mu_filter = M.MuFilter
     tdc2ns = analysis.TDC2ns
-    tds0_min, tds0_max = get_tds0_window(run_nr)
-    tsf0_min, tsf0_max = get_tsf0_window(run_nr)
+    tds0_min, tds0_max = get_tds0_window(run_nr, windows_json)
+    tsf0_min, tsf0_max = get_tsf0_window(run_nr, windows_json)
     category = get_run_category(run_nr)
 
     # Monkey-patch GetDSHaverage for safe DS horizontal time calculation
@@ -561,7 +599,8 @@ def main():
             break_events=args.break_events,
             temp_output=args.temp_output or args.output_file,
             partition=args.partition,
-            geo_file_override=args.geo_file
+            geo_file_override=args.geo_file,
+            windows_json=args.windows_json
         )
         return
 
@@ -649,6 +688,8 @@ def main():
                 "--temp-output", temp_output,
                 "--partition", str(args.partition)
             ]
+            if args.windows_json and os.path.exists(args.windows_json):
+                worker_cmd.extend(["--windows-json", os.path.abspath(args.windows_json)])
             if args.geo_file:
                 worker_cmd.extend(["-g", args.geo_file])
 
