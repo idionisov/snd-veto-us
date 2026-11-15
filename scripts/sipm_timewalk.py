@@ -164,13 +164,22 @@ def run_worker(run_nr, partition, out_file, cscint_file=None, placeholder_cscint
     )
 
     # Load geometry
-    geo_file = "/eos/experiment/sndlhc/convertedData/physics/2022/geofile_sndlhc_TI18_V0_2022.root"
-    if run_nr >= 5413:
-        alt_geo = glob.glob(f"/eos/experiment/sndlhc/convertedData/physics/*/geofile_sndlhc_*.root")
-        if alt_geo:
-            geo_file = alt_geo[-1]
+    from snd import DataManager
+    try:
+        geo_file = DataManager.get_geo_path_for_run(run_nr)
+    except Exception:
+        geo_file = ""
+    if not geo_file or not os.path.exists(geo_file.replace("root://eospublic.cern.ch/", "")):
+        geo_file = "/eos/experiment/sndlhc/convertedData/physics/2022/geofile_sndlhc_TI18_V0_2022.root"
+        if run_nr >= 5413:
+            alt_geo = sorted(glob.glob(f"/eos/experiment/sndlhc/convertedData/physics/*/geofile_sndlhc_*.root"))
+            if alt_geo:
+                geo_file = alt_geo[-1]
 
-    geo_file_opt = "../" + geo_file
+    if geo_file.startswith("root://") or geo_file.startswith("/"):
+        geo_file_opt = "../" + geo_file
+    else:
+        geo_file_opt = geo_file
 
     data_base_dir = os.path.dirname(os.path.dirname(raw_pattern))
     if not data_base_dir.endswith("/"):

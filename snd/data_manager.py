@@ -75,13 +75,15 @@ class DataManager:
         elif isinstance(source, int):
             run_num = int(source)
 
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default_csv = os.path.join(repo_root, "config", "data_paths.csv")
+        self._csv_data_path = str(csv_data_path) if csv_data_path is not None else (default_csv if os.path.exists(default_csv) else "")
+
+        default_geo_csv = os.path.join(repo_root, "config", "geo_paths.csv")
+        self._csv_geo_path = str(csv_geo_path) if csv_geo_path is not None else (default_geo_csv if os.path.exists(default_geo_csv) else "")
+
         if run_num is not None:
-            if csv_data_path is None:
-                repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                default_csv = os.path.join(repo_root, "config", "data_paths.csv")
-                csv_str = default_csv if os.path.exists(default_csv) else ""
-            else:
-                csv_str = str(csv_data_path)
+            csv_str = self._csv_data_path
             self._cpp = ROOT.snd.DataManager(run_num, n_files, csv_str, tree_str, threads_int)
         elif isinstance(source, ROOT.TChain):
             self._cpp = ROOT.snd.DataManager(source, False, threads_int)
@@ -161,20 +163,21 @@ class DataManager:
 
     @property
     def data_base_path(self) -> Optional[str]:
-        dbp = str(self._cpp.GetDataBasePath())
+        csv_file = getattr(self, "_csv_data_path", "")
+        dbp = str(self._cpp.GetDataBasePath(csv_file)) if csv_file else str(self._cpp.GetDataBasePath())
         return dbp if dbp else None
 
     @property
     def geo_path(self) -> Optional[str]:
-        gp = str(self._cpp.GetGeoPath())
-        return gp if gp else None
+        return self.get_geo_path()
 
     @geo_path.setter
     def geo_path(self, path: str) -> None:
         self._cpp.SetGeoPath(str(path))
 
     def get_geo_path(self, csv_file_path: Optional[str] = None) -> Optional[str]:
-        gp = str(self._cpp.GetGeoPath(csv_file_path or ""))
+        csv_file = csv_file_path or getattr(self, "_csv_geo_path", "")
+        gp = str(self._cpp.GetGeoPath(csv_file)) if csv_file else str(self._cpp.GetGeoPath(""))
         return gp if gp else None
 
     def init_geometry(self, geo_path: Optional[str] = None, csv_file_path: Optional[str] = None) -> Tuple[Any, Any]:
@@ -388,6 +391,8 @@ class DataManager:
             default_csv = os.path.join(repo_root, "config", "data_paths.csv")
             csv_file_path = default_csv if os.path.exists(default_csv) else ""
         return str(ROOT.snd.DataManager.FetchDataBasePath(int(run), csv_file_path or ""))
+
+    get_data_path_for_run = get_data_base_path
 
     @staticmethod
     def get_geo_path_for_run(run: int, csv_file_path: Optional[str] = None) -> str:

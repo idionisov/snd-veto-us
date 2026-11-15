@@ -117,23 +117,23 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         import python.AnalysisFunctions as af
     from snd import DataManager
 
-    # 1. Resolve dataset via DataManager
-    dm = DataManager(run=run_nr)
+    # 1. Resolve dataset and geometry paths via DataManager
+    data_path = DataManager.get_data_base_path(run_nr)
+    if not data_path:
+        raise RuntimeError(f"Could not resolve data base path for run {run_nr}")
 
-    # 2. Resolve geometry file
     if geo_file_override:
         geo_file = geo_file_override
     else:
-        geo_file = dm.get_geo_path()
-        if not geo_file:
-            geo_file = DataManager.get_geo_path_for_run(run_nr)
+        geo_file = DataManager.get_geo_path_for_run(run_nr)
+    if not geo_file:
+        raise RuntimeError(f"Could not resolve geometry file for run {run_nr}")
 
-    # 3. Configure server and paths
+    # 2. Configure server and paths
     server = os.environ.get("EOSSHIP", "root://eospublic.cern.ch/")
     if not server.endswith("/"):
         server += "/"
 
-    data_path = dm.data_base_path or "/eos/experiment/sndlhc/convertedData/physics/2022/"
     if data_path.startswith(server):
         data_path = data_path[len(server):]
     elif data_path.startswith("root://eospublic.cern.ch/"):
