@@ -497,25 +497,29 @@ def build_slice_summary_plots(slice_stats_list, ref="DS"):
 
     cname = f"c_slices_summary_{ref}"
     canv = ROOT.TCanvas(cname, f"Slice Gaussian Fits Summary ({ref})", 1200, 800)
-    canv.Divide(2, 2)
+    pad1 = ROOT.TPad(f"pad1_{cname}", "Chi2ndf", 0.0, 0.48, 0.5, 1.0)
+    pad2 = ROOT.TPad(f"pad2_{cname}", "StDev", 0.5, 0.48, 1.0, 1.0)
+    pad3 = ROOT.TPad(f"pad3_{cname}", "MeanSigma", 0.0, 0.0, 1.0, 0.48)
+    ROOT.SetOwnership(pad1, False)
+    ROOT.SetOwnership(pad2, False)
+    ROOT.SetOwnership(pad3, False)
 
-    canv.cd(1)
-    ROOT.gPad.SetGrid()
+    pad1.SetGrid()
+    pad2.SetGrid()
+    pad3.SetGrid()
+
+    pad1.Draw()
+    pad2.Draw()
+    pad3.Draw()
+
+    pad1.cd()
     h_chi2.Draw("HIST")
 
-    canv.cd(2)
-    ROOT.gPad.SetGrid()
+    pad2.cd()
     h_sigma.Draw("HIST")
 
-    canv.cd(3)
-    p3 = canv.GetPad(3)
-    p3.SetPad(0.0, 0.0, 1.0, 0.48)
-    p3.SetGrid()
+    pad3.cd()
     gr_mean_sigma.Draw("AP")
-
-    p4 = canv.GetPad(4)
-    if p4:
-        p4.SetPad(0, 0, 0, 0)
 
     canv.Update()
     return {
