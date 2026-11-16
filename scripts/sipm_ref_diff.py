@@ -175,6 +175,13 @@ def parse_args():
         default=_DEFAULT_WINDOWS_JSON,
         help="Path to precalculated reference windows JSON (default: config/ref_time_windows.json)"
     )
+    parser.add_argument(
+        "--no-veto-scifi1", "--no-veto-scifi",
+        dest="require_veto_scifi1",
+        action="store_false",
+        default=True,
+        help="Disable requirement of at least one Veto hit or SciFi station 1 hit per event"
+    )
     # Internal worker flags
     parser.add_argument(
         "--worker",
@@ -193,7 +200,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, windows_json=None):
+def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, windows_json=None, require_veto_scifi1=True):
     """Processes a single run partition in an isolated subprocess."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
@@ -390,6 +397,13 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         # Bunch Crossing selection: only accept colliding IP1 bunches for LHC synchronous runs
         if analysis.isLHCsynch(run_nr):
             if hasattr(M, "xing") and isinstance(M.xing, dict) and not M.xing.get("IP1", True):
+                continue
+
+        # Require at least one Veto hit OR at least one SciFi hit in station 1
+        if require_veto_scifi1:
+            has_veto = any(h.isValid() and (h.GetDetectorID() // 10000 == 1) for h in event.Digi_MuFilterHits)
+            has_scifi1 = any(h.isValid() and (h.GetStation() == 1 if hasattr(h, "GetStation") else h.GetDetectorID() // 1000000 == 1) for h in event.Digi_ScifiHits)
+            if not (has_veto or has_scifi1):
                 continue
 
         # 1. Select qualified tracks:
@@ -600,7 +614,8 @@ def main():
             temp_output=args.temp_output or args.output_file,
             partition=args.partition,
             geo_file_override=args.geo_file,
-            windows_json=args.windows_json
+            windows_json=args.windows_json,
+            require_veto_scifi1=args.require_veto_scifi1
         )
         return
 
@@ -692,6 +707,8 @@ def main():
                 worker_cmd.extend(["--windows-json", os.path.abspath(args.windows_json)])
             if args.geo_file:
                 worker_cmd.extend(["-g", args.geo_file])
+            if not args.require_veto_scifi1:
+                worker_cmd.append("--no-veto-scifi1")
 
             worker_env = dict(os.environ, PYTHONUNBUFFERED="1")
             res = subprocess.run(worker_cmd, env=worker_env, capture_output=True, text=True)

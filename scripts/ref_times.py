@@ -89,6 +89,13 @@ def parse_args():
         default=False,
         help="Force reprocessing of runs already present in output file"
     )
+    parser.add_argument(
+        "--no-veto-scifi1", "--no-veto-scifi",
+        dest="require_veto_scifi1",
+        action="store_false",
+        default=True,
+        help="Disable requirement of at least one Veto hit or SciFi station 1 hit per event"
+    )
     # Internal worker flags
     parser.add_argument(
         "--worker",
@@ -107,7 +114,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None):
+def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, require_veto_scifi1=True):
     """Processes a single run in an isolated subprocess to ensure clean FairRoot initialization."""
     import Monitor
     import SndlhcTracking
@@ -235,6 +242,13 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
         event = M.GetEvent(n)
 
+        # Require at least one Veto hit OR at least one SciFi hit in station 1
+        if require_veto_scifi1:
+            has_veto = any(h.isValid() and (h.GetDetectorID() // 10000 == 1) for h in event.Digi_MuFilterHits)
+            has_scifi1 = any(h.isValid() and (h.GetStation() == 1 if hasattr(h, "GetStation") else h.GetDetectorID() // 1000000 == 1) for h in event.Digi_ScifiHits)
+            if not (has_veto or has_scifi1):
+                continue
+
         # 1. Require single reconstructed track with quality cuts
         if M.Reco_MuonTracks.GetEntries() != 1:
             continue
@@ -284,7 +298,8 @@ def main():
             break_events=args.break_events,
             temp_output=args.temp_output or args.output_file,
             partition=args.partition,
-            geo_file_override=args.geo_file
+            geo_file_override=args.geo_file,
+            require_veto_scifi1=args.require_veto_scifi1
         )
         return
 
@@ -389,6 +404,8 @@ def main():
             ]
             if args.geo_file:
                 worker_cmd.extend(["-g", args.geo_file])
+            if not args.require_veto_scifi1:
+                worker_cmd.append("--no-veto-scifi1")
 
             worker_env = dict(os.environ, PYTHONUNBUFFERED="1")
             res = subprocess.run(worker_cmd, env=worker_env, capture_output=True, text=True)
