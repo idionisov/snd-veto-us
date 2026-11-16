@@ -12,6 +12,15 @@ Features:
                with chi2/ndf, measured c_scint, stat and syst errors.
       Bottom pad: Data / Fit ratio with stat and syst errors drawn as hatched bands.
   - Sub-TDirectory for each SiPM containing slice projection histograms and Gaussian fits.
+  - In gaussian_fits_DS and gaussian_fits_SF directories:
+      * Chi2ndf distribution across all slices and SiPMs combined.
+      * Distribution of Gaussian fit stdev (sigma) values.
+      * Graph with SiPM channel & slice on x-axis, Gaussian mean +/- stdev on y-axis.
+  - In cscint_summary_DS and cscint_summary_SF directories (and ROOT top-level):
+      * cscint vs detId (US and Veto together, contiguous without empty gap between 1XXXX and 2XXXX)
+        with calculated errors as error bars and detector division markers.
+      * cscint fit chi2ndf distribution.
+      * cscint value and error distributions (total, stat, syst).
   - Run category filtering (catI, catII, catIII) and multi-processing support.
 
 Usage:
@@ -84,7 +93,7 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
                        min_slice_entries=15, collect_slices=True):
     """
     Fits c_scint for a single 2D histogram h2 (x_pred vs dt).
-    Also extracts vertical slice projection histograms and Gaussian fits.
+    Also extracts vertical slice projection histograms, Gaussian fits, and slice statistics.
     """
     if h2 is None or h2.GetEntries() < 100:
         return None
@@ -94,6 +103,7 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
 
     ip = 0
     slices_data = []
+    slice_stats_data = []
 
     fg = ROOT.TF1("fg_temp", "gaus", -10, 10, ROOT.TF1.EAddToList.kNo)
 
@@ -117,12 +127,18 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
         mpv = None
         mpv_err = None
         fit_ok = False
+        chi2_g = 0.0
+        ndf_g = 1
+        sigma_g = max(0.3, rms)
         if int(res_g) == 0 and 0 < fg.GetParError(1) < 2.5:
             p1 = fg.GetParameter(1)
             if mode - 2.5 < p1 < mode + 2.5:
                 mpv = p1
                 mpv_err = fg.GetParError(1)
                 fit_ok = True
+                chi2_g = fg.GetChisquare()
+                ndf_g = max(1, fg.GetNDF())
+                sigma_g = abs(fg.GetParameter(2))
 
         if mpv is None:
             mpv = mode
@@ -131,6 +147,18 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
         gr.SetPoint(ip, x, mpv)
         gr.SetPointError(ip, 0.0, mpv_err)
         ip += 1
+
+        slice_stats_data.append({
+            "bx": bx,
+            "x": x,
+            "mean": float(mpv),
+            "mean_err": float(mpv_err),
+            "sigma": float(sigma_g),
+            "chi2_ndf": float(chi2_g / ndf_g) if fit_ok else None,
+            "fit_ok": fit_ok,
+            "ch_name": ch_name,
+            "sipm": sipm,
+        })
 
         if collect_slices:
             tag = ch_name if ch_name else str(sipm)
@@ -228,6 +256,7 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
         "y_arr": y_pts,
         "ey_arr": ey_pts,
         "slices": slices_data,
+        "slice_stats": slice_stats_data,
     }
 
 
@@ -421,17 +450,323 @@ def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: flo
     return c
 
 
+def build_slice_summary_plots(slice_stats_list, ref="DS"):
+    """
+    Builds:
+      - Chi2ndf distribution from all slice fits (from all SiPMs and all slices together)
+      - Distribution of Gaussian fit stdev (sigma) values
+      - A graph with SiPM number and slice on x-axis, Gaussian mean +/- stdev on y-axis
+      - Multi-pad summary canvas
+    """
+    ROOT.TH1.AddDirectory(False)
+    h_chi2 = ROOT.TH1D(f"h_slices_chi2ndf_{ref}", f"Slice Gaussian Fits #chi^{{2}}/ndf ({ref});#chi^{{2}}/ndf;Slices", 60, 0.0, 6.0)
+    h_sigma = ROOT.TH1D(f"h_slices_stdev_{ref}", f"Slice Gaussian Fits StDev #sigma ({ref});#sigma [ns];Slices", 60, 0.0, 3.0)
+    h_chi2.SetLineColor(ROOT.kAzure + 2)
+    h_chi2.SetFillColorAlpha(ROOT.kAzure + 1, 0.35)
+    h_sigma.SetLineColor(ROOT.kTeal + 2)
+    h_sigma.SetFillColorAlpha(ROOT.kTeal + 1, 0.35)
+
+    gr_mean_sigma = ROOT.TGraphErrors()
+    gr_mean_sigma.SetName(f"gr_slices_mean_sigma_{ref}")
+    gr_mean_sigma.SetTitle(f"Gaussian Mean #pm #sigma vs SiPM Channel & Slice ({ref});SiPM Channel Index;Mean #pm #sigma [ns]")
+    gr_mean_sigma.SetMarkerStyle(20)
+    gr_mean_sigma.SetMarkerSize(0.35)
+    gr_mean_sigma.SetMarkerColor(ROOT.kBlue + 2)
+    gr_mean_sigma.SetLineColor(ROOT.kAzure - 4)
+
+    unique_channels = sorted(list(set(s["ch_name"] for s in slice_stats_list if s.get("ch_name"))))
+    ch_to_idx = {ch: i for i, ch in enumerate(unique_channels)}
+
+    bx_vals = [s["bx"] for s in slice_stats_list]
+    min_bx = min(bx_vals) if bx_vals else 1
+    max_bx = max(bx_vals) if bx_vals else 60
+    bx_span = max(1, max_bx - min_bx + 1)
+
+    ip = 0
+    for s in slice_stats_list:
+        if s.get("chi2_ndf") is not None:
+            h_chi2.Fill(s["chi2_ndf"])
+        h_sigma.Fill(s["sigma"])
+
+        ch = s.get("ch_name", "")
+        ch_idx = ch_to_idx.get(ch, s.get("sipm", 0))
+        x_val = ch_idx + float(s["bx"] - min_bx) / float(bx_span)
+        gr_mean_sigma.SetPoint(ip, x_val, s["mean"])
+        gr_mean_sigma.SetPointError(ip, 0.0, s["sigma"])
+        ip += 1
+
+    cname = f"c_slices_summary_{ref}"
+    canv = ROOT.TCanvas(cname, f"Slice Gaussian Fits Summary ({ref})", 1200, 800)
+    canv.Divide(2, 2)
+
+    canv.cd(1)
+    ROOT.gPad.SetGrid()
+    h_chi2.Draw("HIST")
+
+    canv.cd(2)
+    ROOT.gPad.SetGrid()
+    h_sigma.Draw("HIST")
+
+    canv.cd(3)
+    p3 = canv.GetPad(3)
+    p3.SetPad(0.0, 0.0, 1.0, 0.48)
+    p3.SetGrid()
+    gr_mean_sigma.Draw("AP")
+
+    p4 = canv.GetPad(4)
+    if p4:
+        p4.SetPad(0, 0, 0, 0)
+
+    canv.Update()
+    return {
+        "h_chi2": h_chi2,
+        "h_sigma": h_sigma,
+        "gr_mean_sigma": gr_mean_sigma,
+        "canvas": canv
+    }
+
+
+def build_cscint_global_summary_plots(channel_results, ref="DS"):
+    """
+    Builds:
+      - cscint vs detId (US and Veto together, no gap between 1XXXX and 2XXXX)
+      - cscint fit chi2ndf distribution
+      - cscint value and error distributions (total, stat, syst)
+      - Canvases for standalone detID inspection and 4-pad consolidated overview
+    """
+    ROOT.TH1.AddDirectory(False)
+    det_ids = sorted(list(set(d["detID"] for d in channel_results.values())))
+    n_bars = len(det_ids)
+    det_to_idx = {det: i for i, det in enumerate(det_ids)}
+
+    gr_veto = ROOT.TGraphErrors()
+    gr_veto.SetName(f"gr_cscint_veto_{ref}")
+    gr_veto.SetTitle(f"c_{{scint}} vs Detector ID ({ref});Detector ID;c_{{scint}} [cm/ns]")
+    gr_veto.SetMarkerStyle(20)
+    gr_veto.SetMarkerSize(0.6)
+    gr_veto.SetMarkerColor(ROOT.kRed + 1)
+    gr_veto.SetLineColor(ROOT.kRed + 1)
+
+    gr_us = ROOT.TGraphErrors()
+    gr_us.SetName(f"gr_cscint_us_{ref}")
+    gr_us.SetTitle(f"c_{{scint}} vs Detector ID ({ref});Detector ID;c_{{scint}} [cm/ns]")
+    gr_us.SetMarkerStyle(21)
+    gr_us.SetMarkerSize(0.6)
+    gr_us.SetMarkerColor(ROOT.kAzure + 2)
+    gr_us.SetLineColor(ROOT.kAzure + 2)
+
+    gr_det_mean = ROOT.TGraphErrors()
+    gr_det_mean.SetName(f"gr_cscint_det_mean_{ref}")
+    gr_det_mean.SetTitle(f"Detector Bar Mean c_{{scint}} ({ref});Detector ID;c_{{scint}} [cm/ns]")
+    gr_det_mean.SetMarkerStyle(29)
+    gr_det_mean.SetMarkerSize(1.2)
+    gr_det_mean.SetMarkerColor(ROOT.kBlack)
+    gr_det_mean.SetLineColor(ROOT.kBlack)
+
+    gr_all = ROOT.TGraphErrors()
+    gr_all.SetName(f"gr_cscint_vs_detID_{ref}")
+    gr_all.SetTitle(f"c_{{scint}} vs Detector ID ({ref});Detector ID;c_{{scint}} [cm/ns]")
+
+    h_chi2 = ROOT.TH1D(f"h_cscint_chi2ndf_{ref}", f"c_{{scint}} Linear Fit #chi^{{2}}/ndf ({ref});#chi^{{2}}/ndf;Channels", 50, 0.0, 5.0)
+    h_chi2.SetLineColor(ROOT.kRed + 1)
+    h_chi2.SetFillColorAlpha(ROOT.kRed - 9, 0.4)
+
+    h_val = ROOT.TH1D(f"h_cscint_val_{ref}", f"Effective Speed c_{{scint}} ({ref});c_{{scint}} [cm/ns];Channels", 50, 10.0, 18.0)
+    h_val.SetLineColor(ROOT.kBlue + 2)
+    h_val.SetFillColorAlpha(ROOT.kAzure - 9, 0.4)
+
+    h_err_tot = ROOT.TH1D(f"h_cscint_err_tot_{ref}", f"Total Error #Delta c_{{scint}} ({ref});#Delta c [cm/ns];Channels", 50, 0.0, 1.2)
+    h_err_tot.SetLineColor(ROOT.kBlack)
+    h_err_tot.SetLineWidth(2)
+
+    h_err_stat = ROOT.TH1D(f"h_cscint_err_stat_{ref}", f"Stat Error #Delta c_{{scint}}^{{stat}} ({ref});#Delta c [cm/ns];Channels", 50, 0.0, 1.2)
+    h_err_stat.SetLineColor(ROOT.kOrange + 7)
+    h_err_stat.SetLineWidth(2)
+    h_err_stat.SetLineStyle(2)
+
+    h_err_syst = ROOT.TH1D(f"h_cscint_err_syst_{ref}", f"Syst Error #Delta c_{{scint}}^{{syst}} ({ref});#Delta c [cm/ns];Channels", 50, 0.0, 1.2)
+    h_err_syst.SetLineColor(ROOT.kTeal + 2)
+    h_err_syst.SetLineWidth(2)
+    h_err_syst.SetLineStyle(3)
+
+    iv = 0
+    iu = 0
+    ia = 0
+    bar_groups = {}
+
+    for k, d in channel_results.items():
+        det = d["detID"]
+        sipm = d["sipm"]
+        c_val = d["c_scint"]
+        c_err = d["delta_c_tot"]
+        c_stat = d["delta_c_fit"]
+        c_syst = d["delta_c_syst"]
+        chi2_ndf = d["chi2_ndf"]
+
+        h_chi2.Fill(chi2_ndf)
+        h_val.Fill(c_val)
+        h_err_tot.Fill(c_err)
+        h_err_stat.Fill(c_stat)
+        h_err_syst.Fill(c_syst)
+
+        if det not in bar_groups:
+            bar_groups[det] = []
+        bar_groups[det].append((c_val, c_err))
+
+        base_x = det_to_idx[det]
+        x = base_x + (sipm - 7.5) / 18.0
+
+        if det < 20000:
+            gr_veto.SetPoint(iv, x, c_val)
+            gr_veto.SetPointError(iv, 0.0, c_err)
+            iv += 1
+        else:
+            gr_us.SetPoint(iu, x, c_val)
+            gr_us.SetPointError(iu, 0.0, c_err)
+            iu += 1
+
+        gr_all.SetPoint(ia, x, c_val)
+        gr_all.SetPointError(ia, 0.0, c_err)
+        ia += 1
+
+    ib = 0
+    for det in det_ids:
+        pts = bar_groups.get(det, [])
+        if not pts:
+            continue
+        vals = np.array([p[0] for p in pts])
+        errs = np.array([p[1] for p in pts])
+        w = 1.0 / (errs ** 2)
+        w_mean = float(np.sum(w * vals) / np.sum(w))
+        w_err = float(1.0 / np.sqrt(np.sum(w)))
+        gr_det_mean.SetPoint(ib, det_to_idx[det], w_mean)
+        gr_det_mean.SetPointError(ib, 0.0, w_err)
+        ib += 1
+
+    # Standalone cscint vs detID canvas
+    c_det = ROOT.TCanvas(f"c_cscint_vs_detID_{ref}", f"c_scint vs Detector ID ({ref})", 1300, 650)
+    c_det.SetGrid()
+    c_det.SetLeftMargin(0.08)
+    c_det.SetRightMargin(0.04)
+    c_det.SetBottomMargin(0.18)
+
+    h_axis = ROOT.TH1F(f"h_axis_{ref}", f"Effective Scintillator Speed c_{{scint}} vs Detector ID ({ref});Detector ID;c_{{scint}} [cm/ns]", n_bars, -0.5, n_bars - 0.5)
+    h_axis.SetDirectory(0)
+    h_axis.SetStats(0)
+    h_axis.GetYaxis().SetRangeUser(10.0, 18.0)
+    h_axis.GetXaxis().SetTitleOffset(1.3)
+    h_axis.GetXaxis().SetLabelSize(0.032)
+
+    veto_count = sum(1 for d in det_ids if d < 20000)
+    for i, det in enumerate(det_ids):
+        if i % 3 == 0 or det in (10000, 11000, 20000, 21000, 22000, 23000, 24000):
+            h_axis.GetXaxis().SetBinLabel(i + 1, str(det))
+        else:
+            h_axis.GetXaxis().SetBinLabel(i + 1, "")
+    h_axis.GetXaxis().LabelsOption("v")
+    h_axis.Draw("AXIS")
+
+    line_sep = ROOT.TLine(veto_count - 0.5, 10.0, veto_count - 0.5, 18.0)
+    ROOT.SetOwnership(line_sep, False)
+    line_sep.SetLineStyle(7)
+    line_sep.SetLineColor(ROOT.kGray + 2)
+    line_sep.SetLineWidth(2)
+    line_sep.Draw()
+
+    t_veto = ROOT.TLatex(max(0.5, veto_count / 2.0 - 0.5), 17.4, "VETO")
+    ROOT.SetOwnership(t_veto, False)
+    t_veto.SetTextAlign(22)
+    t_veto.SetTextFont(62)
+    t_veto.SetTextColor(ROOT.kRed + 2)
+    t_veto.Draw()
+
+    t_us = ROOT.TLatex(veto_count + (n_bars - veto_count) / 2.0 - 0.5, 17.4, "UPSTREAM (US)")
+    ROOT.SetOwnership(t_us, False)
+    t_us.SetTextAlign(22)
+    t_us.SetTextFont(62)
+    t_us.SetTextColor(ROOT.kAzure + 2)
+    t_us.Draw()
+
+    gr_veto.Draw("PE SAME")
+    gr_us.Draw("PE SAME")
+    gr_det_mean.Draw("PE SAME")
+
+    leg = ROOT.TLegend(0.12, 0.76, 0.40, 0.90)
+    leg.SetBorderSize(1)
+    leg.SetFillColorAlpha(ROOT.kWhite, 0.85)
+    leg.AddEntry(gr_veto, "Veto SiPMs", "lep")
+    leg.AddEntry(gr_us, "US SiPMs", "lep")
+    leg.AddEntry(gr_det_mean, "Bar Weighted Mean", "lep")
+    ROOT.SetOwnership(leg, False)
+    leg.Draw()
+    c_det.Update()
+
+    # 4-pad consolidated canvas
+    c_summary = ROOT.TCanvas(f"c_cscint_summary_{ref}", f"c_scint Global Summary ({ref})", 1200, 850)
+    c_summary.Divide(2, 2)
+
+    c_summary.cd(1)
+    ROOT.gPad.SetGrid()
+    h_axis_clone = h_axis.Clone(f"h_axis_clone_{ref}")
+    ROOT.SetOwnership(h_axis_clone, False)
+    h_axis_clone.Draw("AXIS")
+    line_sep_clone = line_sep.Clone()
+    ROOT.SetOwnership(line_sep_clone, False)
+    line_sep_clone.Draw()
+    gr_veto.Draw("PE SAME")
+    gr_us.Draw("PE SAME")
+    gr_det_mean.Draw("PE SAME")
+
+    c_summary.cd(2)
+    ROOT.gPad.SetGrid()
+    h_val.Draw("HIST")
+
+    c_summary.cd(3)
+    ROOT.gPad.SetGrid()
+    h_chi2.Draw("HIST")
+
+    c_summary.cd(4)
+    ROOT.gPad.SetGrid()
+    h_err_tot.Draw("HIST")
+    h_err_stat.Draw("HIST SAME")
+    h_err_syst.Draw("HIST SAME")
+
+    leg_err = ROOT.TLegend(0.55, 0.68, 0.88, 0.88)
+    leg_err.SetBorderSize(1)
+    leg_err.SetFillColorAlpha(ROOT.kWhite, 0.8)
+    leg_err.AddEntry(h_err_tot, "Total Uncertainty", "l")
+    leg_err.AddEntry(h_err_stat, "Stat Uncertainty", "l")
+    leg_err.AddEntry(h_err_syst, "Syst Uncertainty", "l")
+    ROOT.SetOwnership(leg_err, False)
+    leg_err.Draw()
+
+    c_summary.Update()
+
+    return {
+        "gr_veto": gr_veto,
+        "gr_us": gr_us,
+        "gr_all": gr_all,
+        "gr_det_mean": gr_det_mean,
+        "h_chi2": h_chi2,
+        "h_val": h_val,
+        "h_err_tot": h_err_tot,
+        "h_err_stat": h_err_stat,
+        "h_err_syst": h_err_syst,
+        "c_det": c_det,
+        "c_summary": c_summary
+    }
+
+
 def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
              save_slice_canvases: bool = False, output_path: str = None, verbose: bool = False):
     """
     Fits c_scint for all SiPM channels in root_path.
     If save_canvas=True, stores 2-pad fit canvas into each channel directory.
-    If save_slices=True, stores vertical slice projection histograms and Gaussian fits
-    in sub-TDirectories (gaussian_fits_DS and gaussian_fits_SF).
+    If save_slices=True, stores vertical slice projection histograms and Gaussian fits.
+    Also produces slice summary and global cscint distributions across all SiPMs.
     """
     target_path = output_path if output_path else root_path
 
-    # Use a local temporary file for atomic, high-performance I/O if on network fs
     is_network = root_path.startswith("/eos") or target_path.startswith("/eos")
     if is_network:
         tmp_fd, work_file = tempfile.mkstemp(suffix=".root", prefix="cscint_fit_")
@@ -451,6 +786,7 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         return None
 
     results = {"DS": {}, "SF": {}}
+    all_slice_stats = {"DS": [], "SF": []}
 
     key_names = [k.GetName() for k in f.GetListOfKeys()]
     total_ch = len(key_names)
@@ -495,7 +831,11 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                     for h_slice in res_ds["slices"]:
                         h_slice.Write(h_slice.GetName(), ROOT.TObject.kOverwrite)
 
+                if res_ds.get("slice_stats"):
+                    all_slice_stats["DS"].extend(res_ds["slice_stats"])
+
                 res_ds.pop("slices", None)
+                res_ds.pop("slice_stats", None)
                 for arr_k in ("x_arr", "y_arr", "ey_arr"):
                     res_ds.pop(arr_k, None)
                 res_ds["sipm"] = sipm
@@ -525,7 +865,11 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                     for h_slice in res_sf["slices"]:
                         h_slice.Write(h_slice.GetName(), ROOT.TObject.kOverwrite)
 
+                if res_sf.get("slice_stats"):
+                    all_slice_stats["SF"].extend(res_sf["slice_stats"])
+
                 res_sf.pop("slices", None)
+                res_sf.pop("slice_stats", None)
                 for arr_k in ("x_arr", "y_arr", "ey_arr"):
                     res_sf.pop(arr_k, None)
                 res_sf["sipm"] = sipm
@@ -535,9 +879,42 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         if verbose and (idx + 1) % 100 == 0:
             print(f"  Processed {idx + 1}/{total_ch} channels...", flush=True)
 
+    # Write global slice distributions and cscint summary distributions
+    if save_slices or save_canvas:
+        for ref in ("DS", "SF"):
+            # 1. Global slice summary in gaussian_fits_<ref>
+            if all_slice_stats[ref]:
+                s_plots = build_slice_summary_plots(all_slice_stats[ref], ref=ref)
+                g_dir = f.GetDirectory(f"gaussian_fits_{ref}")
+                if not g_dir:
+                    g_dir = f.mkdir(f"gaussian_fits_{ref}")
+                g_dir.cd()
+                g_dir.WriteObject(s_plots["h_chi2"], s_plots["h_chi2"].GetName(), "kOverwrite")
+                g_dir.WriteObject(s_plots["h_sigma"], s_plots["h_sigma"].GetName(), "kOverwrite")
+                g_dir.WriteObject(s_plots["gr_mean_sigma"], s_plots["gr_mean_sigma"].GetName(), "kOverwrite")
+                g_dir.WriteObject(s_plots["canvas"], s_plots["canvas"].GetName(), "kOverwrite")
+                s_plots["canvas"].Close()
+
+            # 2. Global cscint summary in cscint_summary_<ref> and root level
+            if results[ref]:
+                c_plots = build_cscint_global_summary_plots(results[ref], ref=ref)
+                c_dir = f.GetDirectory(f"cscint_summary_{ref}")
+                if not c_dir:
+                    c_dir = f.mkdir(f"cscint_summary_{ref}")
+                c_dir.cd()
+                for obj_key in ("gr_veto", "gr_us", "gr_all", "gr_det_mean", "h_chi2", "h_val",
+                                "h_err_tot", "h_err_stat", "h_err_syst", "c_det", "c_summary"):
+                    obj = c_plots[obj_key]
+                    c_dir.WriteObject(obj, obj.GetName(), "kOverwrite")
+
+                f.cd()
+                f.WriteObject(c_plots["c_det"], c_plots["c_det"].GetName(), "kOverwrite")
+                f.WriteObject(c_plots["c_summary"], c_plots["c_summary"].GetName(), "kOverwrite")
+                c_plots["c_det"].Close()
+                c_plots["c_summary"].Close()
+
     f.Close()
 
-    # If working on temporary file, atomically move it to target location
     if is_network:
         os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
         shutil.move(work_file, target_path)
@@ -611,8 +988,6 @@ def main():
                         help="Do not save Gaussian slice fits")
     parser.add_argument("--save-slice-canvases", dest="save_slice_canvases", action="store_true", default=False,
                         help="Save individual TCanvas objects for slices (default: False; TH1D with attached TF1 is saved by default)")
-    parser.add_argument("--no-slice-canvases", dest="save_slice_canvases", action="store_false",
-                        help="Do not create TCanvas objects for slices (stores TH1D with attached TF1 only)")
     parser.add_argument("--no-canvas", dest="save_canvas", action="store_false", default=True,
                         help="Do not store fit canvases in the input ROOT file")
     parser.add_argument("--output-root-dir", type=str, default=None,
@@ -644,7 +1019,7 @@ def main():
                 print(f"  -> DS: {ds_sum['n_channels']} channels, c_scint = {ds_sum['weighted_mean']:.2f} +/- {ds_sum['weighted_sem']:.2f} cm/ns (mean={ds_sum['mean']:.2f})")
             if args.save_canvas:
                 target_written = out_root if out_root else args.input
-                print(f"[SUCCESS] Saved fit canvases and slice subdirectories into ROOT file: {target_written}")
+                print(f"[SUCCESS] Saved fit canvases, slice subdirectories, and global summary plots into ROOT file: {target_written}")
 
     elif args.input_dir:
         target_cats = normalize_categories(args.category)
