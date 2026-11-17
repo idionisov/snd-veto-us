@@ -622,16 +622,23 @@ def fit_file(
             os.remove(work_file)
         return None
 
-    # Resolve run number from path (e.g. run5119.root or /run5119/part_0.root)
+    # Resolve run number and category from path
     import re
     m_run = re.search(r"run_?(\d+)", root_path)
     if m_run:
         run_nr = int(m_run.group(1))
+        category = get_run_category(run_nr)
     else:
         bname = os.path.basename(root_path)
         rnum_str = "".join([c for c in bname.replace(".root", "") if c.isdigit()])
         run_nr = int(rnum_str) if rnum_str else 0
-    category = get_run_category(run_nr) if run_nr > 0 else "unknown"
+        m_cat = re.search(r"(cat[I|V|X]+)", bname, re.IGNORECASE)
+        if m_cat:
+            category = m_cat.group(1).lower()
+            if category.startswith("cat"):
+                category = "cat" + category[3:].upper()
+        else:
+            category = get_run_category(run_nr) if run_nr > 0 else "unknown"
 
     # Identify channel directories: can be top-level (<detID>_<sipm>) or inside cat/run hierarchy
     ch_dirs = []
