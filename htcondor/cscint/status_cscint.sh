@@ -12,16 +12,22 @@ echo "======================================================================"
 condor_q -nobatch 2>/dev/null | grep -E "cscint_run|ID" | head -n 20 || condor_q
 echo ""
 
-ARGS_ALL="${DIR}/args_partitions_all_max20.txt"
+# Resolve argument files (prefer max40 if generated, fallback to max20, then unconstrained)
+P_SUFFIX="max40"
+if [ ! -f "${DIR}/args_partitions_all_max40.txt" ]; then
+    P_SUFFIX="max20"
+fi
+
+ARGS_ALL="${DIR}/args_partitions_all_${P_SUFFIX}.txt"
 [ ! -f "${ARGS_ALL}" ] && ARGS_ALL="${DIR}/args_partitions_all.txt"
 
-ARGS_CATI="${DIR}/args_partitions_catI_max20.txt"
+ARGS_CATI="${DIR}/args_partitions_catI_${P_SUFFIX}.txt"
 [ ! -f "${ARGS_CATI}" ] && ARGS_CATI="${DIR}/args_partitions_catI.txt"
 
-ARGS_CATII="${DIR}/args_partitions_catII_max20.txt"
+ARGS_CATII="${DIR}/args_partitions_catII_${P_SUFFIX}.txt"
 [ ! -f "${ARGS_CATII}" ] && ARGS_CATII="${DIR}/args_partitions_catII.txt"
 
-ARGS_CATIII="${DIR}/args_partitions_catIII_max20.txt"
+ARGS_CATIII="${DIR}/args_partitions_catIII_${P_SUFFIX}.txt"
 
 TOTAL_ALL=$(wc -l < "${ARGS_ALL}" 2>/dev/null || echo 0)
 TOTAL_CATI=$(wc -l < "${ARGS_CATI}" 2>/dev/null || echo 0)

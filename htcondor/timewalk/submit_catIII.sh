@@ -19,13 +19,18 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
 YEAR="${1:-all}"
+P_SUFFIX="max40"
+if [ ! -f "${DIR}/args_partitions_catIII_max40.txt" ]; then
+    P_SUFFIX="max20"
+fi
+
 if [[ "${YEAR}" =~ ^(2023|2024|2025|2026)$ ]]; then
     shift || true
-    ARGS_FILE="${DIR}/args_partitions_catIII_${YEAR}_max20.txt"
-    DESC="Year ${YEAR}"
+    ARGS_FILE="${DIR}/args_partitions_catIII_${YEAR}_${P_SUFFIX}.txt"
+    DESC="Year ${YEAR} (${P_SUFFIX})"
 else
-    ARGS_FILE="${DIR}/args_partitions_catIII_max20.txt"
-    DESC="All Years (2023-2026, 40 runs)"
+    ARGS_FILE="${DIR}/args_partitions_catIII_${P_SUFFIX}.txt"
+    DESC="All Years (2023-2026, 40 runs, ${P_SUFFIX})"
 fi
 
 FLAVOUR="${FLAVOUR:-workday}"
