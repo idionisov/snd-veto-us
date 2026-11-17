@@ -162,6 +162,9 @@ def fit_single_timewalk_hist(
     x_pts, y_pts, ey_pts = [], [], []
 
     # 1. Timing Projections per QDC bin: Extract MPV and SEM
+    # Scan from qdc_min upwards; once we are in the populated region,
+    # stop in the upper QDC tail as soon as a bin has fewer than min_bin_entries.
+    started = False
     for b in range(1, nbins + 1):
         x_val = h2.GetXaxis().GetBinCenter(b)
         if x_val < qdc_min:
@@ -169,8 +172,11 @@ def fit_single_timewalk_hist(
         py = h2.ProjectionY(f"py_tw_{ref}_{fixed_ch}_{b}", b, b)
         bin_entries = py.GetEntries()
         if bin_entries < min_bin_entries:
+            if started:
+                break
             continue
 
+        started = True
         max_bin = py.GetMaximumBin()
         y_val = py.GetBinCenter(max_bin)
         rms_val = py.GetRMS()
