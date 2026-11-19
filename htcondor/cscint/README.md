@@ -14,7 +14,24 @@ In `scripts/sipm_ref_diff.py` and `TimeWalk.py`:
 - **Category II** ($5117 \le run \le 5174$ or $5193 \le run \le 5412$):
   - $[11.0, 16.0]\text{ ns}$
 
-## Submitting Jobs (Max 15 Partitions Per Run)
+## Submitting Category II Jobs (All Partitions)
+
+There are **3,389 total raw partitions** on EOS across all 33 qualifying Category II runs.
+
+```bash
+cd htcondor/cscint
+
+# 1. Submit ONLY missing partitions (skips the 635 already-extracted partitions):
+./submit_catII.sh -m
+
+# 2. Or submit the entire list of 3,389 partitions (existing partitions auto-skip on worker node):
+./submit_catII.sh
+
+# 3. Dry-run check:
+./submit_catII.sh -m --dry-run
+```
+
+## Submitting Jobs (Capped Partitions / Fast Mode)
 
 To submit with a cap of 15 partitions per run:
 
