@@ -1,0 +1,41 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk Parameter Fitting per Run
+#
+# Process per job: One merged run ROOT file (run<RUN>.root)
+# Fits 2D histograms with Minuit rational function and extracts TW calibrations
+# Flavour: microcentury (1 hour; actual runtime ~ 1-2 min per run)
+# Input:  $(in_dir)/run<RUN>.root
+# Output: $(out_dir)/run<RUN>_timing_calibration.json
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:microcentury)
+args_file               = $(args_file:$(base_dir)/args_fits.txt)
+in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk/runs)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk/fits)
+cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint/fits)
+
+executable              = $(base_dir)/run_fit_worker.sh
+arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir)
+environment             = "FORCE=$(force:0) SAVE_CANVAS=$(save_canvas:1)"
+
+output                  = $(base_dir)/out/fit_tw_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/fit_tw_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/fit_tw_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 2GB
+max_retries             = 2
+
+queue run from $(args_file)

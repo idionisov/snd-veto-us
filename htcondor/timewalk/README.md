@@ -61,3 +61,38 @@ Once jobs finish:
 # Or merge only Category III:
 ./merge_timewalk.sh -c catIII
 ```
+
+---
+
+# HTCondor Time-Walk Parameter Fitting Pipeline
+
+Automated parallel fitting of merged 2D run distributions to extract rational time-walk parameters, channel-to-channel alignments $d_{\text{SiPM}}$, and embed $c_{\text{scint}}$ constants.
+
+- **Submit script:** `submit_fits.sh`
+- **Submit definition:** `fit_timewalk.sub`
+- **Worker script:** `run_fit_worker.sh`
+- **Status script:** `status_fits.sh`
+- **Inputs:** `/eos/user/i/idioniso/Timing/timewalk/runs/run<RUN>.root`
+- **Outputs:** `/eos/user/i/idioniso/Timing/timewalk/fits/run<RUN>_timing_calibration.json`
+
+### Usage
+
+```bash
+cd /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk
+
+# Check status of fitted runs
+./status_fits.sh
+
+# Dry-run check for submission
+./submit_fits.sh --dry-run
+
+# Submit all uncompleted runs (microcentury flavour, ~1-2 min per run)
+./submit_fits.sh
+
+# Force re-fit of all runs
+./submit_fits.sh --force
+
+# Submit specific run(s)
+./submit_fits.sh -r 5152,5247
+```
+
