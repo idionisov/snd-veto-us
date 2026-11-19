@@ -90,7 +90,7 @@ def normalize_categories(cat_args):
 
 
 def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=-5.0,
-                       min_slice_entries=15, collect_slices=True):
+                       min_slice_entries=15, collect_slices=True, n_segments=5):
     """
     Fits c_scint for a single 2D histogram h2 (x_pred vs dt).
     Also extracts vertical slice projection histograms, Gaussian fits, and slice statistics.
@@ -199,8 +199,7 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
     if c_scint <= 0 or c_scint > 50.0:
         return None
 
-    # Systematic error: 5 disjoint sub-segment fits (same as TimeWalk.py)
-    n_segments = 5
+    # Systematic error: disjoint sub-segment fits (same as TimeWalk.py)
     total_span = fit_max - fit_min
     seg_width = total_span / n_segments
 
@@ -762,7 +761,8 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
 
 
 def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
-             save_slice_canvases: bool = False, output_path: str = None, verbose: bool = False):
+             save_slice_canvases: bool = False, output_path: str = None, verbose: bool = False,
+             veto_min: float = -42.0, veto_max: float = -12.0, veto_n_segments: int = 3):
     """
     Fits c_scint for all SiPM channels in root_path.
     If save_canvas=True, stores 2-pad fit canvas into each channel directory.
@@ -812,16 +812,26 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         if not ch_dir:
             ch_dir = f.mkdir(k)
 
+        is_veto = (detID < 20000)
+        if is_veto:
+            fit_min_ds, fit_max_ds = veto_min, veto_max
+            fit_min_sf, fit_max_sf = veto_min, veto_max
+            n_seg = veto_n_segments
+        else:
+            fit_min_ds, fit_max_ds = -55.0, -5.0
+            fit_min_sf, fit_max_sf = -44.0, -8.0
+            n_seg = 5
+
         # Fit DS
         h2_ds = f.Get(f"{k}/dt-DS")
         if h2_ds and h2_ds.InheritsFrom("TH2"):
             res_ds = fit_single_2d_hist(
-                h2_ds, ref="DS", sipm=sipm, ch_name=k, fit_min=-55.0, fit_max=-5.0,
-                min_slice_entries=15, collect_slices=save_slices
+                h2_ds, ref="DS", sipm=sipm, ch_name=k, fit_min=fit_min_ds, fit_max=fit_max_ds,
+                min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
             )
             if res_ds is not None:
                 if save_canvas:
-                    canv_ds = build_cscint_canvas(h2_ds, k, "DS", res_ds, fit_min=-55.0, fit_max=-5.0)
+                    canv_ds = build_cscint_canvas(h2_ds, k, "DS", res_ds, fit_min=fit_min_ds, fit_max=fit_max_ds)
                     ch_dir.WriteObject(canv_ds, canv_ds.GetName(), "kOverwrite")
                     ch_dir.WriteObject(canv_ds, "c_cscint_DS", "kOverwrite")
                     canv_ds.Close()
@@ -850,12 +860,12 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         h2_sf = f.Get(f"{k}/dt-SF")
         if h2_sf and h2_sf.InheritsFrom("TH2"):
             res_sf = fit_single_2d_hist(
-                h2_sf, ref="SF", sipm=sipm, ch_name=k, fit_min=-44.0, fit_max=-8.0,
-                min_slice_entries=15, collect_slices=save_slices
+                h2_sf, ref="SF", sipm=sipm, ch_name=k, fit_min=fit_min_sf, fit_max=fit_max_sf,
+                min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
             )
             if res_sf is not None:
                 if save_canvas:
-                    canv_sf = build_cscint_canvas(h2_sf, k, "SF", res_sf, fit_min=-44.0, fit_max=-8.0)
+                    canv_sf = build_cscint_canvas(h2_sf, k, "SF", res_sf, fit_min=fit_min_sf, fit_max=fit_max_sf)
                     ch_dir.WriteObject(canv_sf, canv_sf.GetName(), "kOverwrite")
                     ch_dir.WriteObject(canv_sf, "c_cscint_SF", "kOverwrite")
                     canv_sf.Close()
@@ -948,7 +958,7 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
 
 def _worker_process_run(task_args):
     """Worker task wrapper for multiprocessing."""
-    fpath, rnum, cat, out_run_json, out_run_root, save_canvas, save_slices, save_slice_canvases, verbose = task_args
+    fpath, rnum, cat, out_run_json, out_run_root, save_canvas, save_slices, save_slice_canvases, verbose, veto_min, veto_max, veto_n_seg = task_args
     try:
         res = fit_file(
             fpath,
@@ -956,7 +966,10 @@ def _worker_process_run(task_args):
             save_slices=save_slices,
             save_slice_canvases=save_slice_canvases,
             output_path=out_run_root,
-            verbose=verbose
+            verbose=verbose,
+            veto_min=veto_min,
+            veto_max=veto_max,
+            veto_n_segments=veto_n_seg
         )
         if res is None:
             return None
@@ -996,6 +1009,12 @@ def main():
                         help="Do not store fit canvases in the input ROOT file")
     parser.add_argument("--output-root-dir", type=str, default=None,
                         help="Optional output directory for modified ROOT files (default: update in-place)")
+    parser.add_argument("--veto-min", type=float, default=-42.0,
+                        help="Lower bound in x_pred [cm] for Veto c_scint fit (default: -42.0)")
+    parser.add_argument("--veto-max", type=float, default=-12.0,
+                        help="Upper bound in x_pred [cm] for Veto c_scint fit (default: -12.0)")
+    parser.add_argument("--veto-segments", type=int, default=3,
+                        help="Number of sub-segments for Veto systematic error estimation (default: 3)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print progress")
     args = parser.parse_args()
 
@@ -1011,7 +1030,10 @@ def main():
             save_slices=args.save_slices,
             save_slice_canvases=args.save_slice_canvases,
             output_path=out_root,
-            verbose=args.verbose
+            verbose=args.verbose,
+            veto_min=args.veto_min,
+            veto_max=args.veto_max,
+            veto_n_segments=args.veto_segments
         )
         if res is not None:
             os.makedirs(os.path.dirname(os.path.abspath(out_json)), exist_ok=True)
@@ -1052,7 +1074,8 @@ def main():
 
             tasks.append((
                 fpath, rnum, cat, out_run_json, out_run_root,
-                args.save_canvas, args.save_slices, args.save_slice_canvases, args.verbose
+                args.save_canvas, args.save_slices, args.save_slice_canvases, args.verbose,
+                args.veto_min, args.veto_max, args.veto_segments
             ))
 
         print(f"======================================================================")

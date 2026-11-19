@@ -90,11 +90,11 @@ def parse_args():
         help="Force reprocessing of runs already present in output file"
     )
     parser.add_argument(
-        "--no-veto-scifi1", "--no-veto-scifi",
+        "--require-veto-scifi1", "--require-veto-scifi",
         dest="require_veto_scifi1",
-        action="store_false",
-        default=True,
-        help="Disable requirement of at least one Veto hit or SciFi station 1 hit per event"
+        action="store_true",
+        default=False,
+        help="Enable requirement of at least one Veto hit or SciFi station 1 hit per event (default: False)"
     )
     # Internal worker flags
     parser.add_argument(
@@ -114,7 +114,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, require_veto_scifi1=True):
+def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_override=None, require_veto_scifi1=False):
     """Processes a single run in an isolated subprocess to ensure clean FairRoot initialization."""
     import Monitor
     import SndlhcTracking
@@ -404,8 +404,8 @@ def main():
             ]
             if args.geo_file:
                 worker_cmd.extend(["-g", args.geo_file])
-            if not args.require_veto_scifi1:
-                worker_cmd.append("--no-veto-scifi1")
+            if args.require_veto_scifi1:
+                worker_cmd.append("--require-veto-scifi1")
 
             worker_env = dict(os.environ, PYTHONUNBUFFERED="1")
             res = subprocess.run(worker_cmd, env=worker_env, capture_output=True, text=True)

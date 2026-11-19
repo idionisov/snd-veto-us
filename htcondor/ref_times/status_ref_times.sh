@@ -15,6 +15,8 @@ echo ""
 SUFFIX=""
 if [ "$1" == "--max15" ] || [ "$1" == "max15" ] || [ "$1" == "15" ]; then
     SUFFIX="_max15"
+elif [ "$1" == "--max5" ] || [ "$1" == "max5" ] || [ "$1" == "5" ]; then
+    SUFFIX="_max5"
 elif [[ "$1" =~ ^_ ]]; then
     SUFFIX="$1"
 fi
