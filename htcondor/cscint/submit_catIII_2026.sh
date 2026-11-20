@@ -7,11 +7,11 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
-ARGS_FILE="${DIR}/args_partitions_catIII_2026_max20.txt"
+ARGS_FILE="${DIR}/args_partitions_catIII_2026.txt"
 TOTAL_JOBS=$(wc -l < "${ARGS_FILE}")
 
 echo "======================================================================"
-echo " Submitting Category III 2026 Partition Jobs for cscint (Max 20 part/run)"
+echo " Submitting Category III 2026 Partition Jobs for cscint (All partitions)"
 echo " Total jobs: ${TOTAL_JOBS}"
 echo " Flavour:    workday"
 echo "======================================================================"
