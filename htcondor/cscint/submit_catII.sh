@@ -11,7 +11,7 @@ FLAVOUR="workday"
 FORCE=0
 MISSING_ONLY=0
 DRY_RUN=0
-ARGS_FILE="${DIR}/args_partitions_catII.txt"
+ARGS_FILE="${DIR}/args_partitions_catII_max20.txt"
 
 usage() {
     cat <<EOF
