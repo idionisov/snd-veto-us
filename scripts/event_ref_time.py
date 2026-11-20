@@ -849,11 +849,13 @@ def run_single_run(run_nr, args):
         delta_ref = fit_res["mu"]
         delta_err = fit_res["mu_err"]
         delta_sigma = fit_res["sigma"]
+        delta_sig_err = fit_res.get("sigma_err", 0.0)
         delta_chi2ndf = fit_res["chi2_ndf"]
     else:
         delta_ref = h_shift.GetMean() if h_shift.GetEntries() > 0 else 0.0
         delta_err = h_shift.GetMeanError() if h_shift.GetEntries() > 0 else 0.0
         delta_sigma = h_shift.GetRMS() if h_shift.GetEntries() > 0 else 0.0
+        delta_sig_err = 0.0
         delta_chi2ndf = 1.0
 
     mean_tof = float(np.mean([r["tof_muon"] for r in matched_records])) if matched_records else 6.79
@@ -883,7 +885,9 @@ def run_single_run(run_nr, args):
     h_shift.SetLineWidth(2)
     h_shift.SetLineColor(ROOT.kAzure + 1)
     h_shift.SetFillColorAlpha(ROOT.kAzure - 4, 0.35)
-    h_shift.SetStats(False)
+    h_shift.SetStats(True)
+    ROOT.gStyle.SetOptFit(1111)
+    ROOT.gStyle.SetOptStat(1110)
     h_shift.GetXaxis().SetTitleOffset(1.15)
     h_shift.GetXaxis().SetTitleSize(0.045)
     h_shift.GetYaxis().SetTitleOffset(1.30)
@@ -893,17 +897,33 @@ def run_single_run(run_nr, args):
     if fit_res and "func" in fit_res:
         fit_res["func"].Draw("SAME")
 
-    pave = ROOT.TPaveText(0.58, 0.62, 0.89, 0.88, "NDC")
-    pave.SetFillColorAlpha(ROOT.kWhite, 0.85)
-    pave.SetBorderSize(1)
-    pave.SetTextFont(42)
-    pave.SetTextSize(0.038)
-    pave.AddText(f"Run {run_nr} (Partition {args.partition})")
-    pave.AddText(f"Matched Muons = {len(matched_records):,}")
-    pave.AddText(f"#mu = {delta_ref:+.3f} #pm {delta_err:.3f} ns")
-    pave.AddText(f"#sigma = {delta_sigma*1000.0:.1f} ps")
-    pave.AddText(f"#chi^{{2}} / ndf = {delta_chi2ndf:.2f}")
-    pave.Draw("SAME")
+    c_shift.Update()
+
+    # Move stats box if generated, or draw dedicated fit info pave
+    st = h_shift.FindObject("stats")
+    if st:
+        st.SetX1NDC(0.60)
+        st.SetX2NDC(0.92)
+        st.SetY1NDC(0.60)
+        st.SetY2NDC(0.88)
+        st.SetBorderSize(1)
+        st.SetFillColorAlpha(ROOT.kWhite, 0.90)
+        st.Draw()
+    else:
+        pave = ROOT.TPaveText(0.60, 0.60, 0.92, 0.88, "NDC")
+        pave.SetFillColorAlpha(ROOT.kWhite, 0.90)
+        pave.SetBorderSize(1)
+        pave.SetTextFont(42)
+        pave.SetTextSize(0.035)
+        pave.SetTextAlign(12)
+        pave.AddText(f"Run {run_nr} (Partition {args.partition})")
+        pave.AddText(f"Matched Muons: {len(matched_records):,}")
+        pave.AddText(f"Fit Mean (#mu): {delta_ref:+.3f} #pm {delta_err:.3f} ns")
+        pave.AddText(f"Fit StdDev (#sigma): {delta_sigma*1000.0:.1f} #pm {delta_sig_err*1000.0:.1f} ps")
+        pave.AddText(f"#chi^{{2}} / ndf: {delta_chi2ndf:.2f}")
+        pave.Draw("SAME")
+
+    c_shift.Modified()
     c_shift.Update()
 
     # Track matching canvas
