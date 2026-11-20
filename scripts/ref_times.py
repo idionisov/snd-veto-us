@@ -183,8 +183,24 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
     h_tds0 = ROOT.TH1F("reft-DS", f"DS Reference Time (Run {run_nr});t_{{0}}^{{DS}} [ns];Counts", 200, 0, 50)
     h_tsf0 = ROOT.TH1F("reft-SF", f"SciFi Reference Time (Run {run_nr});t_{{0}}^{{SF}} [ns];Counts", 200, -25, 25)
 
+    is_catI = (run_nr <= 5116) or (5175 <= run_nr <= 5192)
+
     track_task = SndlhcTracking.Tracking()
     track_task.SetName("simpleTracking")
+
+    if is_catI or require_veto_scifi1:
+        orig_ExecTask = track_task.ExecuteTask
+
+        def filtered_ExecuteTask(option="ScifiDS"):
+            event = M.eventTree
+            has_veto = any(h.isValid() and (h.GetDetectorID() // 10000 == 1) for h in event.Digi_MuFilterHits)
+            has_scifi1 = any(h.isValid() and (h.GetStation() == 1 if hasattr(h, "GetStation") else h.GetDetectorID() // 1000000 == 1) for h in event.Digi_ScifiHits)
+            if not (has_veto or has_scifi1):
+                return
+            orig_ExecTask(option)
+
+        track_task.ExecuteTask = filtered_ExecuteTask
+
     FairTasks = [track_task]
     M = Monitor.Monitoring(options, FairTasks)
     M.M = M
@@ -232,7 +248,7 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
     actual_entries = M.GetEntries()
     events_to_process = min(max_ev, actual_entries) if max_ev > 0 else actual_entries
 
-    print(f" ~ Processing Run {run_nr}: {events_to_process:,} events (break limit: {break_events:,}, total in run: {actual_entries:,})", flush=True)
+    print(f" ~ Processing Run {run_nr}: {events_to_process:,} events (break limit: {break_events:,}, total in run: {actual_entries:,}, Cat I cut: {is_catI})", flush=True)
 
     heartbeat = 50000
     for n in range(events_to_process):
@@ -242,8 +258,8 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
         event = M.GetEvent(n)
 
-        # Require at least one Veto hit OR at least one SciFi hit in station 1
-        if require_veto_scifi1:
+        # Require at least one Veto hit OR at least one SciFi hit in station 1 for Category I runs
+        if is_catI or require_veto_scifi1:
             has_veto = any(h.isValid() and (h.GetDetectorID() // 10000 == 1) for h in event.Digi_MuFilterHits)
             has_scifi1 = any(h.isValid() and (h.GetStation() == 1 if hasattr(h, "GetStation") else h.GetDetectorID() // 1000000 == 1) for h in event.Digi_ScifiHits)
             if not (has_veto or has_scifi1):
