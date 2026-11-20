@@ -160,6 +160,10 @@ def process_single_run(fpath, output_root_target=None, n_sigma=3.5):
                 else:
                     out_record[f"{det}_t_min"] = None
                     out_record[f"{det}_t_max"] = None
+
+            if "ds" in fit_results and "sf" in fit_results:
+                out_record["delta_t"] = round(fit_results["ds"]["mu"] - fit_results["sf"]["mu"], 4)
+                out_record["delta_t_sigma"] = round(float(np.sqrt(fit_results["ds"]["sigma"]**2 + fit_results["sf"]["sigma"]**2)), 4)
     except Exception as e:
         out_record["error"] = str(e)
 

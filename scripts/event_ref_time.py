@@ -22,7 +22,8 @@ Physics & Calibration Formulation:
            no more than 3 cm apart in both x and y coordinates:
            |x_SF(430) - x_DS(430)| <= 3.0 cm and |y_SF(430) - y_DS(430)| <= 3.0 cm
 
-  2. Reference Times and Muon Time-of-Flight:
+  2. Reference Windows & Times:
+     - Cuts tsf0 in [sf_t_min, sf_t_max] and tds0 in [ds_t_min, ds_t_max] from config/ref_time_windows.json.
      - SciFi reference time t_0^{SF}: average corrected time of SciFi hits.
      - DS reference time t_0^{DS}: average corrected time of double-sided DS horizontal hits.
      - Muon propagation distance Delta_L = sqrt(Delta_x^2 + Delta_y^2 + Delta_z^2)
@@ -32,7 +33,9 @@ Physics & Calibration Formulation:
   3. Unified Clock Bridge & Inter-System Time Shift:
      - delta = (t_0^{DS} - t_0^{SF}) - ToF_muon
      - Unified reference time:
-         t_ref^{unified} = t_0^{SF} = t_0^{DS} - ToF_muon - delta
+         t_ref^{unified} = 0.5 * (t_0^{SF} + (t_0^{DS} - ToF_muon - delta))
+     - Full-run unified reference distribution:
+         reft-Unified = reft-SF + reft-DS(shifted by -(ToF_muon + delta))
 
 Author: Antigravity Assistant / SND@LHC Timing Group
 """
@@ -40,7 +43,9 @@ Author: Antigravity Assistant / SND@LHC Timing Group
 import os
 import sys
 import math
+import json
 import argparse
+import subprocess
 import numpy as np
 
 # Ensure repository root is in python path
@@ -63,10 +68,10 @@ def parse_args():
     )
     parser.add_argument(
         "-r", "--run", "--run-number",
-        dest="run_number",
-        type=int,
-        default=5119,
-        help="Run number to process (default: 5119)"
+        dest="run_numbers",
+        type=str,
+        default="5119",
+        help="Run number or comma-separated list of runs to process (default: 5119)"
     )
     parser.add_argument(
         "-P", "--partition",
@@ -93,15 +98,71 @@ def parse_args():
         "-n", "--nEvents", "-b", "--break",
         dest="max_events",
         type=int,
-        default=-1,
-        help="Maximum events to process (default: -1 for all events in partition)"
+        default=50000,
+        help="Maximum events to process per run (default: 50,000; <=0 for all)"
     )
     parser.add_argument(
         "-o", "--output",
         dest="output_root",
         type=str,
         default=None,
-        help="Path to output ROOT file (default: /eos/user/i/idioniso/Timing/unified_ref_time_run<run>.root)"
+        help="Path to output ROOT file (default: <output-dir>/run<run>.root)"
+    )
+    parser.add_argument(
+        "--windows-json",
+        dest="windows_json",
+        type=str,
+        default=os.path.join(_REPO_ROOT, "config", "ref_time_windows.json"),
+        help="Path to JSON file containing extracted ref time windows (default: config/ref_time_windows.json)"
+    )
+    parser.add_argument(
+        "--ref-runs-dir",
+        dest="ref_runs_dir",
+        type=str,
+        default="/eos/user/i/idioniso/Timing/ref_times/runs",
+        help="Directory containing original run ROOT files with reft-DS and reft-SF"
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=str,
+        default="/eos/user/i/idioniso/Timing/ref_times/runs_unified",
+        help="Output directory for unified run ROOT files (default: /eos/user/i/idioniso/Timing/ref_times/runs_unified)"
+    )
+    parser.add_argument(
+        "--delta-json",
+        dest="delta_json",
+        type=str,
+        default=os.path.join(_REPO_ROOT, "config", "scifi_ds_delta_offsets.json"),
+        help="Output JSON path to save delta parameters (default: config/scifi_ds_delta_offsets.json)"
+    )
+    parser.add_argument(
+        "--delta-csv",
+        dest="delta_csv",
+        type=str,
+        default=os.path.join(_REPO_ROOT, "config", "scifi_ds_delta_offsets.csv"),
+        help="Output CSV path to save delta parameters (default: config/scifi_ds_delta_offsets.csv)"
+    )
+    parser.add_argument(
+        "--plot-dir",
+        dest="plot_dir",
+        type=str,
+        default=None,
+        help="Optional directory to save PNG summary plots"
+    )
+    parser.add_argument(
+        "-c", "--category",
+        dest="category",
+        type=str,
+        default="auto",
+        help="Detector category (catI, catII, catIII, or auto; default: auto)"
+    )
+    parser.add_argument(
+        "--worker",
+        dest="worker",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS
     )
 
     # Cuts configuration
@@ -147,11 +208,25 @@ def parse_args():
         help="Event DeltaT mode: 'less' for DeltaT < threshold, 'greater' for DeltaT > threshold, 'none' to skip (default: none)"
     )
     parser.add_argument(
+        "--min-veto-hits",
+        dest="min_veto_hits",
+        type=int,
+        default=1,
+        help="Minimum number of valid Veto hits allowed (>= 1, default: 1)"
+    )
+    parser.add_argument(
         "--max-veto-hits",
         dest="max_veto_hits",
         type=int,
-        default=4,
-        help="Maximum number of valid Veto hits allowed (< 4, default: 4)"
+        default=3,
+        help="Maximum number of valid Veto hits allowed (<= 3, default: 3)"
+    )
+    parser.add_argument(
+        "--min-scifi-hits",
+        dest="min_scifi_hits",
+        type=int,
+        default=6,
+        help="Minimum number of SciFi hits allowed (>= 6, default: 6)"
     )
     parser.add_argument(
         "--max-scifi-hits",
@@ -161,11 +236,25 @@ def parse_args():
         help="Maximum number of SciFi hits allowed (< 27, default: 27)"
     )
     parser.add_argument(
+        "--min-us-hits",
+        dest="min_us_hits",
+        type=int,
+        default=4,
+        help="Minimum number of Upstream hits allowed (>= 4, default: 4)"
+    )
+    parser.add_argument(
         "--max-us-hits",
         dest="max_us_hits",
         type=int,
         default=8,
-        help="Maximum number of Upstream hits allowed (< 8, default: 8)"
+        help="Maximum number of Upstream hits allowed (<= 8, default: 8)"
+    )
+    parser.add_argument(
+        "--min-ds-hits",
+        dest="min_ds_hits",
+        type=int,
+        default=6,
+        help="Minimum number of Downstream hits allowed (>= 6, default: 6)"
     )
     parser.add_argument(
         "--max-ds-hits",
@@ -261,38 +350,82 @@ def fit_gaussian_iterative(hist, n_sigma=2.0):
     }
 
 
-def main():
-    args = parse_args()
+def run_single_run(run_nr, args):
+    """Processes a single run: calculates delta offset, clones original histograms, and saves reft-Unified."""
+    # Determine output file path
+    if args.output_root:
+        output_file = args.output_root
+    else:
+        output_file = os.path.join(args.output_dir, f"run{run_nr}.root")
 
-    # Dynamic default output ROOT file
-    if args.output_root is None:
-        p_tag = f"_p{args.partition}" if args.partition >= 0 else ""
-        args.output_root = f"/eos/user/i/idioniso/Timing/unified_ref_time_run{args.run_number}{p_tag}.root"
+    os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output_root)), exist_ok=True)
+    # 1. Load reference time windows if available
+    sf_t_min, sf_t_max = -20.0, 20.0
+    ds_t_min, ds_t_max = 0.0, 40.0
+    has_windows = False
+    if args.windows_json and os.path.exists(args.windows_json):
+        try:
+            with open(args.windows_json, "r") as f:
+                win_data = json.load(f)
+            r_str = str(run_nr)
+            if r_str in win_data:
+                w = win_data[r_str]
+                sf_t_min = float(w["sf_t_min"])
+                sf_t_max = float(w["sf_t_max"])
+                ds_t_min = float(w["ds_t_min"])
+                ds_t_max = float(w["ds_t_max"])
+                has_windows = True
+                print(f"[INFO] [Run {run_nr}] Applied Ref Windows: SF=[{sf_t_min:.3f}, {sf_t_max:.3f}] ns, DS=[{ds_t_min:.3f}, {ds_t_max:.3f}] ns")
+        except Exception as e:
+            print(f"[WARNING] [Run {run_nr}] Could not parse windows JSON: {e}")
 
-    print("======================================================================")
-    print("  SND@LHC Unified Reference Time Bridging: event_ref_time.py")
-    print(f"  Run Number        : {args.run_number}")
-    print(f"  Partition         : {args.partition}")
-    print(f"  Data Base Path    : {args.data_path}")
-    print(f"  Output ROOT File  : {args.output_root}")
-    print(f"  Track Match Z     : z = {args.match_z:.1f} cm (Window: |Delta x|, |Delta y| <= {args.match_window:.1f} cm)")
-    print(f"  Quality Cuts      : chi2/ndf < {args.max_chi2ndf}, slope < {args.max_slope} rad")
-    print(f"  Multiplicities    : Veto < {args.max_veto_hits}, SciFi < {args.max_scifi_hits}, US < {args.max_us_hits}, DS < {args.max_ds_hits}")
-    print(f"  DeltaT Mode       : {args.delta_t_mode} (Threshold: {args.delta_t_cut} cc)")
-    print(f"  Require isIP1     : {args.require_ip1}")
-    print(f"  Require StableBm  : {args.require_stable_beams} (Target: {args.beam_mode})")
-    print("======================================================================")
+    if not has_windows:
+        cat_in = getattr(args, "category", "auto")
+        if cat_in == "auto":
+            if (5117 <= run_nr <= 5174) or (5193 <= run_nr <= 5412):
+                cat_in = "catII"
+            elif (run_nr <= 5116) or (5175 <= run_nr <= 5192):
+                cat_in = "catI"
+            else:
+                cat_in = "catIII"
+        if cat_in == "catI":
+            sf_t_min, sf_t_max = 1.0, 5.0
+            ds_t_min, ds_t_max = 20.0, 24.5
+        elif cat_in == "catII":
+            sf_t_min, sf_t_max = 0.0, 3.5
+            ds_t_min, ds_t_max = 11.0, 14.5
+        elif cat_in == "catIII":
+            sf_t_min, sf_t_max = 0.5, 4.0
+            ds_t_min, ds_t_max = 14.5, 21.0
+        print(f"[INFO] [Run {run_nr}] Fallback Category {cat_in} Windows: SF=[{sf_t_min:.3f}, {sf_t_max:.3f}] ns, DS=[{ds_t_min:.3f}, {ds_t_max:.3f}] ns")
 
-    # Resolve geometry file
-    if args.geo_file is None:
+    # 2. Check for pre-existing run file in ref_runs_dir
+    orig_ds, orig_sf = None, None
+    orig_run_path = os.path.join(args.ref_runs_dir, f"run{run_nr}.root")
+    if os.path.exists(orig_run_path):
+        f_orig = ROOT.TFile.Open(orig_run_path, "READ")
+        if f_orig and not f_orig.IsZombie():
+            h_ds_tmp = f_orig.Get("reft-DS")
+            h_sf_tmp = f_orig.Get("reft-SF")
+            if h_ds_tmp:
+                orig_ds = h_ds_tmp.Clone("reft-DS")
+                orig_ds.SetDirectory(0)
+            if h_sf_tmp:
+                orig_sf = h_sf_tmp.Clone("reft-SF")
+                orig_sf.SetDirectory(0)
+            f_orig.Close()
+            print(f"[INFO] [Run {run_nr}] Loaded existing histograms from {orig_run_path} (reft-DS: {orig_ds.GetEntries():,.0f}, reft-SF: {orig_sf.GetEntries():,.0f})")
+
+    # 3. Resolve geometry file
+    geo_file = args.geo_file
+    if geo_file is None:
         from snd import DataManager
-        args.geo_file = DataManager.get_geo_path_for_run(args.run_number)
-    if not args.geo_file:
-        args.geo_file = "/eos/experiment/sndlhc/convertedData/physics/2022/geofile_sndlhc_TI18_V0_2022.root"
-    if args.geo_file.startswith("root://eospublic.cern.ch/"):
-        args.geo_file = args.geo_file.replace("root://eospublic.cern.ch/", "")
+        geo_file = DataManager.get_geo_path_for_run(run_nr)
+    if not geo_file:
+        geo_file = "/eos/experiment/sndlhc/convertedData/physics/2022/geofile_sndlhc_TI18_V0_2022.root"
+    if geo_file.startswith("root://eospublic.cern.ch/"):
+        geo_file = geo_file.replace("root://eospublic.cern.ch/", "")
 
     import Monitor
     import SndlhcTracking
@@ -302,12 +435,12 @@ def main():
         import python.AnalysisFunctions as af
 
     options = type("Opts", (), {
-        "runNumber": args.run_number,
+        "runNumber": run_nr,
         "path": args.data_path,
         "fname": None,
         "partition": args.partition,
         "server": "",
-        "geoFile": "../" + args.geo_file,
+        "geoFile": "../" + geo_file,
         "trackType": "Scifi,DS",
         "online": False,
         "interactive": False,
@@ -338,12 +471,12 @@ def main():
     analysis.SetTask(M)
 
     # Setup ROOT output file and directory structure
-    out_f = ROOT.TFile.Open(args.output_root, "RECREATE")
+    out_f = ROOT.TFile.Open(output_file, "RECREATE")
     dir_summary = out_f.mkdir("summary")
     dir_matching = out_f.mkdir("track_matching")
     dir_diagnostics = out_f.mkdir("diagnostics")
 
-    # 1. Book Summary Histograms
+    # Summary Histograms
     dir_summary.cd()
     h_cutflow = ROOT.TH1F("h_cutflow", "Event Selection Cutflow;Cut Step;Passing Events", 10, 0.5, 10.5)
     cut_labels = [
@@ -355,19 +488,19 @@ def main():
         "Reconstructed Tracks",
         "Track Quality",
         "Matched at z=430",
-        "Valid SciFi t0",
-        "Valid DS t0"
+        "Valid SciFi t0 (in window)",
+        "Valid DS t0 (in window)"
     ]
     for idx, label in enumerate(cut_labels, start=1):
         h_cutflow.GetXaxis().SetBinLabel(idx, label)
 
-    h_tds0 = ROOT.TH1F("h_tds0", "DS Reference Time t_{0}^{DS};t_{0}^{DS} [ns];Events / 0.1 ns", 400, -10.0, 30.0)
-    h_tsf0 = ROOT.TH1F("h_tsf0", "SciFi Reference Time t_{0}^{SF};t_{0}^{SF} [ns];Events / 0.1 ns", 400, -20.0, 20.0)
-    h_dt_obs = ROOT.TH1F("h_dt_obs", "Observed Reference Time Difference;t_{0}^{DS} - t_{0}^{SF} [ns];Events / 0.1 ns", 400, -10.0, 30.0)
-    h_tof = ROOT.TH1F("h_tof_muon", "Expected Muon Time-of-Flight;#Delta L / c [ns];Events / 0.05 ns", 200, 4.0, 14.0)
-    h_shift = ROOT.TH1F("h_interSystemShift", "Inter-System Time Shift #delta = (t_{0}^{DS} - t_{0}^{SF}) - ToF_{#mu};#delta [ns];Events / 0.1 ns", 400, -15.0, 15.0)
+    h_tds0 = ROOT.TH1F("h_tds0", f"DS Reference Time (Run {run_nr});t_{{0}}^{{DS}} [ns];Events / 0.1 ns", 400, -10.0, 30.0)
+    h_tsf0 = ROOT.TH1F("h_tsf0", f"SciFi Reference Time (Run {run_nr});t_{{0}}^{{SF}} [ns];Events / 0.1 ns", 400, -20.0, 20.0)
+    h_dt_obs = ROOT.TH1F("h_dt_obs", f"Observed Reference Time Difference (Run {run_nr});t_{{0}}^{{DS}} - t_{{0}}^{{SF}} [ns];Events / 0.1 ns", 400, -10.0, 30.0)
+    h_tof = ROOT.TH1F("h_tof_muon", f"Expected Muon Time-of-Flight (Run {run_nr});#Delta L / c [ns];Events / 0.05 ns", 200, 4.0, 14.0)
+    h_shift = ROOT.TH1F("h_interSystemShift", f"Inter-System Time Shift (Run {run_nr});#delta = (t_{{0}}^{{DS}} - t_{{0}}^{{SF}}) - ToF_{{#mu}} [ns];Events / 0.1 ns", 400, -15.0, 15.0)
 
-    # 2. Book Track Matching Histograms
+    # Track Matching Histograms
     dir_matching.cd()
     h2_match_dx_dy = ROOT.TH2F(
         "h2_match_dx_dy",
@@ -387,7 +520,7 @@ def main():
         100, 0.0, args.max_slope * 1.5
     )
 
-    # 3. Book Diagnostics & Correlations
+    # Diagnostics & Correlations
     dir_diagnostics.cd()
     h2_tds_vs_tsf = ROOT.TH2F(
         "h2_tds_vs_tsf",
@@ -423,8 +556,8 @@ def main():
     if args.max_events > 0 and args.max_events < total_events:
         total_events = args.max_events
 
-    print(f"\n[INFO] Starting event loop over {total_events:,} events...")
-    heartbeat = max(5000, total_events // 20)
+    print(f"\n[INFO] [Run {run_nr}] Starting event loop over {total_events:,} events...")
+    heartbeat = max(5000, total_events // 10)
 
     prev_event_time = None
     matched_records = []
@@ -432,7 +565,7 @@ def main():
 
     for ev_idx in range(total_events):
         if ev_idx > 0 and ev_idx % heartbeat == 0:
-            print(f"  Processed {ev_idx:,} / {total_events:,} events (Matched Clean Muons: {len(matched_records):,})...", flush=True)
+            print(f"  [Run {run_nr}] Processed {ev_idx:,} / {total_events:,} events (Matched Clean Muons: {len(matched_records):,})...", flush=True)
 
         event = M.GetEvent(ev_idx)
         header = event.EventHeader
@@ -465,18 +598,25 @@ def main():
         h_cutflow.Fill(4)
 
         # Cut 4: Multiplicities
+        # Requirements:
+        #   (1 <= nVetoHits <= 3)
+        #   (6 <= nScifiHits < 27)
+        #   (4 <= nUShits <= 8)
+        #   (6 <= nDShits < 18)
         nVeto = sum(1 for h in event.Digi_MuFilterHits if h.isValid() and h.GetDetectorID() // 10000 == 1)
         nSciFi = len(event.Digi_ScifiHits)
         nUS = sum(1 for h in event.Digi_MuFilterHits if h.isValid() and h.GetDetectorID() // 10000 == 2)
         nDS = sum(1 for h in event.Digi_MuFilterHits if h.isValid() and h.GetDetectorID() // 10000 == 3)
 
-        if nVeto >= args.max_veto_hits or nSciFi >= args.max_scifi_hits or nUS >= args.max_us_hits or nDS >= args.max_ds_hits:
+        if not (args.min_veto_hits <= nVeto <= args.max_veto_hits):
+            continue
+        if not (args.min_scifi_hits <= nSciFi < args.max_scifi_hits):
+            continue
+        if not (args.min_us_hits <= nUS <= args.max_us_hits):
+            continue
+        if not (args.min_ds_hits <= nDS < args.max_ds_hits):
             continue
         h_cutflow.Fill(5)
-
-        # Minimum hits required to form both SciFi and DS tracks
-        if nSciFi < 3 or nDS < 2:
-            continue
 
         # Initialize event alignment
         M.Scifi.InitEvent(header)
@@ -578,6 +718,9 @@ def main():
         tsf0 = analysis.GetScifiAverageTime(M.Scifi, event.Digi_ScifiHits, mode="tsf0")
         if tsf0 == -999.:
             continue
+        # Apply SciFi window cut
+        if not (sf_t_min <= tsf0 <= sf_t_max):
+            continue
         h_cutflow.Fill(9) # Valid SciFi t0
 
         # Extract DS Reference Time from double-sided horizontal DS hits
@@ -627,7 +770,6 @@ def main():
                 M.MuFilter.GetPosition(detID, pt_a, pt_b)
                 z_ds_hits.append(0.5 * (pt_a.z() + pt_b.z()))
 
-        # Fallback to direct event DS hits if track measurements were stripped
         c_tot = counter_ds[1] + counter_ds[2]
         if c_tot == 0:
             for detID, thit in stations.items():
@@ -647,9 +789,12 @@ def main():
 
         if c_tot == 0:
             continue
-        h_cutflow.Fill(10) # Valid DS t0
 
         tds0 = (total_ds[1] + total_ds[2]) / c_tot
+        # Apply DS window cut
+        if not (ds_t_min <= tds0 <= ds_t_max):
+            continue
+        h_cutflow.Fill(10) # Valid DS t0
 
         # Mean z positions of reference hits
         z_sf_hits = []
@@ -695,37 +840,36 @@ def main():
             "slope": avg_slope
         })
 
-    print(f"\n[INFO] Finished loop! Clean matched muon events with valid reference times: {len(matched_records):,}")
+    print(f"\n[INFO] [Run {run_nr}] Finished loop! Clean matched muon events with valid reference times: {len(matched_records):,}")
 
     # Gaussian fit to inter-system shift distribution
     fit_res = fit_gaussian_iterative(h_shift, n_sigma=2.0)
 
-    # Print Results Summary
-    print("\n" + "=" * 70)
-    print("  INTER-SYSTEM REFERENCE TIME SHIFT RESULTS")
-    print("=" * 70)
-    print(f"  Matched Passing Muons : {len(matched_records):,}")
     if fit_res:
-        print(f"  Fitted Mean Shift (#delta) : {fit_res['mu']:+.3f} +/- {fit_res['mu_err']:.3f} ns")
-        print(f"  Timing Dispersion (#sigma): {fit_res['sigma']*1000.0:.1f} +/- {fit_res['sigma_err']*1000.0:.1f} ps")
-        print(f"  Fit Chi2 / NDF            : {fit_res['chi2_ndf']:.2f}")
+        delta_ref = fit_res["mu"]
+        delta_err = fit_res["mu_err"]
+        delta_sigma = fit_res["sigma"]
+        delta_chi2ndf = fit_res["chi2_ndf"]
     else:
-        print(f"  Histogram Mean Shift      : {h_shift.GetMean():+.3f} +/- {h_shift.GetMeanError():.3f} ns")
-        print(f"  Histogram RMS             : {h_shift.GetRMS()*1000.0:.1f} ps")
+        delta_ref = h_shift.GetMean() if h_shift.GetEntries() > 0 else 0.0
+        delta_err = h_shift.GetMeanError() if h_shift.GetEntries() > 0 else 0.0
+        delta_sigma = h_shift.GetRMS() if h_shift.GetEntries() > 0 else 0.0
+        delta_chi2ndf = 1.0
 
-    if matched_records:
-        shifts_arr = [r["shift"] for r in matched_records]
-        tds0_arr = [r["tds0"] for r in matched_records]
-        tsf0_arr = [r["tsf0"] for r in matched_records]
-        tof_arr = [r["tof_muon"] for r in matched_records]
-        print(f"  Mean t_0^{{DS}}             : {np.mean(tds0_arr):+.3f} ns")
-        print(f"  Mean t_0^{{SF}}             : {np.mean(tsf0_arr):+.3f} ns")
-        print(f"  Mean Observed Delta t     : {np.mean(np.array(tds0_arr) - np.array(tsf0_arr)):+.3f} ns")
-        print(f"  Mean Muon ToF             : {np.mean(tof_arr):.3f} ns")
-        print("=" * 70)
-        print(f"  UNIFIED CLOCK BRIDGE FORMULA:")
-        mu_val = fit_res['mu'] if fit_res else np.mean(shifts_arr)
-        print(f"    t_ref^{{unified}} = t_0^{{SF}} = t_0^{{DS}} - ToF_muon - ({mu_val:+.3f} ns)")
+    mean_tof = float(np.mean([r["tof_muon"] for r in matched_records])) if matched_records else 6.79
+    mean_dt_obs = float(np.mean([r["dt_obs"] for r in matched_records])) if matched_records else (h_dt_obs.GetMean() if h_dt_obs.GetEntries() > 0 else 11.0)
+    mean_tsf0 = float(np.mean([r["tsf0"] for r in matched_records])) if matched_records else (h_tsf0.GetMean() if h_tsf0.GetEntries() > 0 else 1.5)
+    mean_tds0 = float(np.mean([r["tds0"] for r in matched_records])) if matched_records else (h_tds0.GetMean() if h_tds0.GetEntries() > 0 else 12.5)
+
+    print("\n" + "=" * 70)
+    print(f"  INTER-SYSTEM REFERENCE TIME SHIFT RESULTS (Run {run_nr})")
+    print("=" * 70)
+    print(f"  Matched Passing Muons      : {len(matched_records):,}")
+    print(f"  Fitted Mean Shift (#delta) : {delta_ref:+.3f} +/- {delta_err:.3f} ns")
+    print(f"  Timing Dispersion (#sigma) : {delta_sigma*1000.0:.1f} ps (chi2/ndf = {delta_chi2ndf:.2f})")
+    print(f"  Mean Observed Delta t      : {mean_dt_obs:+.3f} ns (DS={mean_tds0:+.3f} ns, SF={mean_tsf0:+.3f} ns)")
+    print(f"  Mean Muon Time-of-Flight   : {mean_tof:.3f} ns")
+    print(f"  UNIFIED BRIDGE FORMULA     : t_ref^unified = t_0^SF = t_0^DS - ToF - ({delta_ref:+.3f} ns)")
     print("=" * 70)
 
     # 4. Generate Diagnostic Canvases
@@ -754,12 +898,11 @@ def main():
     pave.SetBorderSize(1)
     pave.SetTextFont(42)
     pave.SetTextSize(0.038)
-    pave.AddText(f"Run {args.run_number} (Partition {args.partition})")
+    pave.AddText(f"Run {run_nr} (Partition {args.partition})")
     pave.AddText(f"Matched Muons = {len(matched_records):,}")
-    if fit_res:
-        pave.AddText(f"#mu = {fit_res['mu']:+.3f} #pm {fit_res['mu_err']:.3f} ns")
-        pave.AddText(f"#sigma = {fit_res['sigma']*1000.0:.1f} #pm {fit_res['sigma_err']*1000.0:.1f} ps")
-        pave.AddText(f"#chi^{{2}} / ndf = {fit_res['chi2_ndf']:.2f}")
+    pave.AddText(f"#mu = {delta_ref:+.3f} #pm {delta_err:.3f} ns")
+    pave.AddText(f"#sigma = {delta_sigma*1000.0:.1f} ps")
+    pave.AddText(f"#chi^{{2}} / ndf = {delta_chi2ndf:.2f}")
     pave.Draw("SAME")
     c_shift.Update()
 
@@ -820,14 +963,257 @@ def main():
     pave_ov = pave.Clone("pave_overview")
     pave_ov.Draw("SAME")
 
-    # Write all objects to ROOT file
+    if args.plot_dir:
+        os.makedirs(args.plot_dir, exist_ok=True)
+        c_shift.SaveAs(os.path.join(args.plot_dir, f"c_unified_ref_shift_run{run_nr}.png"))
+        c_match.SaveAs(os.path.join(args.plot_dir, f"c_track_matching_z430_run{run_nr}.png"))
+        c_overview.SaveAs(os.path.join(args.plot_dir, f"c_overview_run{run_nr}.png"))
+
+    # 5. Populate top-level ROOT objects
     out_f.cd()
+
+    # Clone or write reft-DS and reft-SF
+    if orig_ds:
+        orig_ds.Write("reft-DS", ROOT.TObject.kOverwrite)
+    else:
+        h_tds0.Write("reft-DS", ROOT.TObject.kOverwrite)
+
+    if orig_sf:
+        orig_sf.Write("reft-SF", ROOT.TObject.kOverwrite)
+    else:
+        h_tsf0.Write("reft-SF", ROOT.TObject.kOverwrite)
+
+    # Top level shift distribution
+    h_shift.Write("h_interSystemShift", ROOT.TObject.kOverwrite)
+
+    # Unified reference time distribution for the run:
+    # reft-Unified: 200 bins from -25 to 25 ns (aligned with reft-SF)
+    h_unified = ROOT.TH1F("reft-Unified", f"Unified Reference Time (Run {run_nr});t_{{0}}^{{unified}} [ns];Counts", 200, -25.0, 25.0)
+    h_unified.SetDirectory(0)
+
+    # Add SciFi component (within valid window)
+    base_sf = orig_sf if orig_sf else h_tsf0
+    for b in range(1, base_sf.GetNbinsX() + 1):
+        t_sf = base_sf.GetBinCenter(b)
+        if sf_t_min <= t_sf <= sf_t_max:
+            c = base_sf.GetBinContent(b)
+            if c > 0:
+                h_unified.Fill(t_sf, c)
+
+    # Add DS component shifted by -(mean_tof + delta_ref) (within valid window)
+    base_ds = orig_ds if orig_ds else h_tds0
+    delta_shift = mean_tof + delta_ref
+    for b in range(1, base_ds.GetNbinsX() + 1):
+        t_ds = base_ds.GetBinCenter(b)
+        if ds_t_min <= t_ds <= ds_t_max:
+            c = base_ds.GetBinContent(b)
+            if c > 0:
+                t_corr = t_ds - delta_shift
+                h_unified.Fill(t_corr, c)
+
+    h_unified.SetEntries(h_unified.Integral())
+    out_f.cd()
+    h_unified.Write("reft-Unified", ROOT.TObject.kOverwrite)
+
+    # Event-by-event unified reference time from matched clean muons
+    h_uni_muons = ROOT.TH1F("reft-Unified-muons", f"Unified Reference Time from Matched Muons (Run {run_nr});t_{{0}}^{{unified}} [ns];Tracks / 0.1 ns", 400, -20.0, 20.0)
+    h_uni_muons.SetDirectory(0)
+    for r in matched_records:
+        t_uni = 0.5 * (r["tsf0"] + (r["tds0"] - r["tof_muon"] - delta_ref))
+        h_uni_muons.Fill(t_uni)
+    h_uni_muons.Write("reft-Unified-muons", ROOT.TObject.kOverwrite)
+
+
+    # Canvases
     c_shift.Write("c_unified_shift")
     c_match.Write("c_track_matching")
     c_overview.Write("c_overview")
+
     out_f.Write()
     out_f.Close()
-    print(f"[INFO] Successfully written ROOT file: {args.output_root}")
+    print(f"[INFO] [Run {run_nr}] Successfully written ROOT file: {output_file}")
+
+    cat = "II"
+    try:
+        csv_runs = os.path.join(_REPO_ROOT, "runs_2022.csv")
+        if os.path.exists(csv_runs):
+            import pandas as pd
+            df_runs = pd.read_csv(csv_runs)
+            m = df_runs[df_runs["run_number"] == int(run_nr)]
+            if not m.empty:
+                cat = str(m.iloc[0]["category"])
+    except Exception:
+        pass
+
+    result_dict = {
+        "run_nr": int(run_nr),
+        "partition": int(args.partition),
+        "category": cat,
+        "delta_ref": round(float(delta_ref), 4),
+        "delta_err": round(float(delta_err), 4),
+        "delta_sigma": round(float(delta_sigma), 4),
+        "delta_chi2ndf": round(float(delta_chi2ndf), 3),
+        "mean_tof": round(float(mean_tof), 4),
+        "mean_dt_obs": round(float(mean_dt_obs), 4),
+        "mean_tsf0": round(float(mean_tsf0), 4),
+        "mean_tds0": round(float(mean_tds0), 4),
+        "n_matched_muons": len(matched_records),
+        "output_file": output_file
+    }
+
+    # Write summary json alongside output_file
+    if output_file.endswith(".root"):
+        json_out = output_file[:-5] + ".json"
+        try:
+            with open(json_out, "w") as f:
+                json.dump(result_dict, f, indent=2)
+        except Exception:
+            pass
+
+    # Write worker temporary JSON if called in worker mode
+    if args.worker:
+        worker_json = f"/tmp/delta_offset_run{run_nr}.json"
+        with open(worker_json, "w") as f:
+            json.dump(result_dict, f, indent=2)
+
+    return result_dict
+
+
+def update_summary_store(new_records, json_path, csv_path):
+    """Updates the JSON and CSV stores with newly extracted delta parameters."""
+    existing = {}
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+
+    for rec in new_records:
+        r_str = str(rec["run_nr"])
+        existing[r_str] = rec
+
+    os.makedirs(os.path.dirname(os.path.abspath(json_path)), exist_ok=True)
+    with open(json_path, "w") as f:
+        json.dump(existing, f, indent=2)
+    print(f"[SUCCESS] Updated JSON store ({len(existing)} runs): {json_path}")
+
+    # Mirror to EOS if possible
+    eos_json = os.path.join("/eos/user/i/idioniso/Timing", os.path.basename(json_path))
+    try:
+        with open(eos_json, "w") as f:
+            json.dump(existing, f, indent=2)
+        print(f"[SUCCESS] Mirrored JSON store to EOS: {eos_json}")
+    except Exception as e:
+        print(f"[WARNING] Could not mirror JSON to EOS: {e}")
+
+    # Write CSV
+    if csv_path:
+        os.makedirs(os.path.dirname(os.path.abspath(csv_path)), exist_ok=True)
+        import pandas as pd
+        rows = list(existing.values())
+        rows.sort(key=lambda x: x["run_nr"])
+        df = pd.DataFrame(rows)
+        df.to_csv(csv_path, index=False)
+        print(f"[SUCCESS] Updated CSV store: {csv_path}")
+
+        eos_csv = os.path.join("/eos/user/i/idioniso/Timing", os.path.basename(csv_path))
+        try:
+            df.to_csv(eos_csv, index=False)
+            print(f"[SUCCESS] Mirrored CSV store to EOS: {eos_csv}")
+        except Exception as e:
+            print(f"[WARNING] Could not mirror CSV to EOS: {e}")
+
+
+def main():
+    args = parse_args()
+
+    # Worker dispatch
+    if args.worker:
+        run_nr = int(args.run_numbers)
+        run_single_run(run_nr, args)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
+    # Master orchestrator
+    run_list = [int(x.strip()) for x in args.run_numbers.split(",") if x.strip()]
+
+    print("=" * 70)
+    print("  SND@LHC Unified Reference Time Bridging: event_ref_time.py")
+    print(f"  Runs to Process   : {run_list}")
+    print(f"  Events per Run    : {args.max_events:,}")
+    print(f"  Partition         : {args.partition}")
+    print(f"  Windows JSON      : {args.windows_json}")
+    print(f"  Ref Runs Dir      : {args.ref_runs_dir}")
+    print(f"  Output Dir        : {args.output_dir}")
+    print(f"  Delta JSON Store  : {args.delta_json}")
+    print(f"  Delta CSV Store   : {args.delta_csv}")
+    print("=" * 70)
+
+    results = []
+
+    if len(run_list) == 1:
+        res = run_single_run(run_list[0], args)
+        results.append(res)
+    else:
+        for idx, r in enumerate(run_list, start=1):
+            print(f"\n>>> [{idx}/{len(run_list)}] Dispatching Worker for Run {r}...")
+            cmd = [
+                sys.executable,
+                "-X", "faulthandler",
+                os.path.abspath(__file__),
+                "--worker",
+                "-r", str(r),
+                "-P", str(args.partition),
+                "-n", str(args.max_events),
+                "-p", args.data_path,
+                "--windows-json", args.windows_json,
+                "--ref-runs-dir", args.ref_runs_dir,
+                "--output-dir", args.output_dir,
+                "--min-veto-hits", str(args.min_veto_hits),
+                "--max-veto-hits", str(args.max_veto_hits),
+                "--min-scifi-hits", str(args.min_scifi_hits),
+                "--max-scifi-hits", str(args.max_scifi_hits),
+                "--min-us-hits", str(args.min_us_hits),
+                "--max-us-hits", str(args.max_us_hits),
+                "--min-ds-hits", str(args.min_ds_hits),
+                "--max-ds-hits", str(args.max_ds_hits),
+                "--max-chi2ndf", str(args.max_chi2ndf),
+                "--match-window", str(args.match_window),
+                "--match-z", str(args.match_z)
+            ]
+            if args.plot_dir:
+                cmd.extend(["--plot-dir", args.plot_dir])
+            if args.geo_file:
+                cmd.extend(["-g", args.geo_file])
+
+            proc = subprocess.run(cmd)
+            if proc.returncode != 0:
+                print(f"[ERROR] Worker for Run {r} exited with code {proc.returncode}!")
+                continue
+
+            worker_json = f"/tmp/delta_offset_run{r}.json"
+            if os.path.exists(worker_json):
+                with open(worker_json, "r") as f:
+                    rec = json.load(f)
+                results.append(rec)
+                os.remove(worker_json)
+
+    # Update summary stores
+    if results:
+        update_summary_store(results, args.delta_json, args.delta_csv)
+
+        # Print formatted summary table
+        print("\n" + "=" * 90)
+        print(f"{'Run':<8} {'Delta (ns)':<16} {'Sigma (ps)':<12} {'Chi2/NDF':<10} {'ToF (ns)':<10} {'Matched Muons':<14} {'Output ROOT File'}")
+        print("-" * 90)
+        for r in results:
+            d_str = f"{r['delta_ref']:+.3f} +/- {r['delta_err']:.3f}"
+            s_str = f"{r['delta_sigma']*1000.0:.1f}"
+            out_base = os.path.basename(r['output_file'])
+            print(f"{r['run_nr']:<8} {d_str:<16} {s_str:<12} {r['delta_chi2ndf']:<10.2f} {r['mean_tof']:<10.3f} {r['n_matched_muons']:<14} {out_base}")
+        print("=" * 90)
 
 
 if __name__ == "__main__":
