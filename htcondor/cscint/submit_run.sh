@@ -27,7 +27,7 @@ else
     python3 -c "
 import os, glob, re, sys
 sys.path.insert(0, '/afs/cern.ch/work/i/idioniso/snd-veto-us')
-from scripts.sipm_ref_diff import get_run_category
+from scripts.mufilter_cscint import get_run_category
 cat = get_run_category(${RUN})
 run_dir = f'/eos/experiment/sndlhc/convertedData/physics/2022/run_{${RUN}:06d}'
 if not os.path.exists(run_dir):

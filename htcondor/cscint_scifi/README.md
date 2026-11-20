@@ -17,7 +17,7 @@ Each raw partition file (`sndsw_raw-XXXX.root`) is processed as an independent s
 htcondor/cscint_scifi/
 ├── args_run5408.txt       # Arguments for all 91 partitions of Run 5408 (0 to 90)
 ├── cscint_scifi.sub       # HTCondor job description file
-├── run_scifi_worker.sh    # Worker script executing scripts/scifi_cluster_ref_diff.py
+├── run_scifi_worker.sh    # Worker script executing scripts/scifi_cscint.py
 ├── submit_run5408.sh      # Helper to submit all 91 partitions of Run 5408
 ├── merge_cscint_scifi.sh  # Script to hadd partitions into runs/run5408.root
 ├── ddfUtils -> ...        # Symlink to ddfUtils

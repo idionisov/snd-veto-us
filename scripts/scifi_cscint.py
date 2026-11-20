@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-scifi_cluster_ref_diff.py
+scifi_cscint.py
 -------------------------
-Analogous to sipm_ref_diff.py, but for SciFi fiber clusters.
+Analogous to mufilter_cscint.py, but for SciFi fiber clusters.
 Extracts the difference between SiPM readout time and reference times:
   t_SiPM - t0^SF  and  t_SiPM - t0^DS
 as a function of the predicted crossing coordinate (x_pred for horizontal planes,
@@ -32,12 +32,12 @@ Selection Cuts:
   - Reference times:
       t0^SF and t0^DS must fall within the qualifying run windows.
 
-Output ROOT Structure (identical to sipm_ref_diff.py):
-  <catI | catII | catIII>/runXXXX/<plane_name>/
-    ├── dt-SF       (t_SiPM - t0^SF - ToF_mu vs pos_pred)
-    ├── dt-DS       (t_SiPM - t0^DS - ToF_mu vs pos_pred)
-    ├── dt-SF_raw   (t_SiPM - t0^SF vs pos_pred)
-    ├── dt-DS_raw   (t_SiPM - t0^DS vs pos_pred)
+Output ROOT Structure:
+  <catI | catII | catIII>/runXXXX/SF<S><H|V>_<M>_<R>/
+    ├── dt-SF
+    ├── dt-DS
+    ├── cluster_size
+    └── residual_meas
     ├── cluster_size
     └── residual_meas
 """
@@ -148,8 +148,8 @@ def parse_args():
         "-o", "--output",
         dest="output_file",
         type=str,
-        default="/tmp/scifi_cluster_ref_diff.root",
-        help="Output ROOT file path (default: /tmp/scifi_cluster_ref_diff.root)"
+        default="/tmp/scifi_cscint.root",
+        help="Output ROOT file path (default: /tmp/scifi_cscint.root)"
     )
     parser.add_argument(
         "-P", "--partition",

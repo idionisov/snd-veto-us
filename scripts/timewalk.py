@@ -17,7 +17,7 @@ Propagation / ToF Correction logic (following TimeWalk.py & AnalysisFunctions.py
   Else (>= 8):  t_ToF = t_raw - dt_prop
   dt = t0 - t_ToF
 
-Selection logic (matching sipm_ref_diff.py):
+Selection logic (matching mufilter_cscint.py):
   - Upstream bars (system 2, detID 20000..24009):
       Tracked by qualified DS track (reconstructed DS track,
       chi2ndf < 5, |slope_x| < 0.1 rad, |slope_y| < 0.1 rad).

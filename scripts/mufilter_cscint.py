@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-sipm_ref_diff.py
-----------------
+mufilter_cscint.py
+------------------
 Extracts the difference between reference times and SiPM readout time:
   t0^DS - t_SiPM  and  t0^SF - t_SiPM
 for each channel (detectorID_SiPMnum: XXXXX_Y) in the Veto and Upstream systems.
@@ -137,7 +137,7 @@ def parse_args():
         "-o", "--output",
         dest="output_file",
         type=str,
-        default="/eos/user/i/idioniso/Timing/sipm_ref_diff_2022.root",
+        default="/eos/user/i/idioniso/Timing/mufilter_cscint_2022.root",
         help="Single output ROOT file storing cat/run/detectorID_SiPM directories"
     )
     parser.add_argument(

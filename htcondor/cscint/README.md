@@ -6,7 +6,7 @@ Each raw partition file (`sndsw_raw-XXXX.root`) is processed as an independent, 
 
 ## Reference Time Windows (Updated)
 
-In `scripts/sipm_ref_diff.py` and `TimeWalk.py`:
+In `scripts/mufilter_cscint.py` and `TimeWalk.py`:
 - **Category I**:
   - Region 1 ($run \le 4819$): $[14.0, 17.5]\text{ ns}$
   - Region 2 ($4820 \le run \le 5116$): $[16.5, 20.0]\text{ ns}$
