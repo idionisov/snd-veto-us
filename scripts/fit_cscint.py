@@ -5,8 +5,15 @@ fit_cscint.py
 Extracts the effective scintillator speed c_scint, its statistical fit error,
 and its systematic error for each SiPM channel from merged cscint ROOT files.
 
+Supported Subsystems & Geometry:
+  - Horizontal Veto (detID 10000..11999): fit in x in [-42, -12] cm, both ends (0..7 Right, 8..15 Left).
+  - Vertical Veto Plane 2 (detID 12000..12999, 2024+): fit in y in [13, 55] cm, top readout (0..7).
+  - Upstream (detID 20000..24999): fit in x in [-55, -5] cm, both ends (0..7 Right, 8..15 Left).
+  - Downstream Horizontal (detID 30000..32999, bar < 60): fit in x in [-55, -5] cm, ch 0 (Left), ch 1 (Right).
+  - Downstream Vertical (detID 30000..33999, bar >= 60): fit in y in [10, 66] cm, top readout (ch 0).
+
 Features:
-  - Linear fit of dt vs x_pred with stat and systematic uncertainties.
+  - Linear fit of dt vs position with stat and systematic uncertainties.
   - Generates 2-pad canvases:
       Top pad: 2D histogram + fitted line + data points with stat & syst errors + legend
                with chi2/ndf, measured c_scint, stat and syst errors.
@@ -17,10 +24,10 @@ Features:
       * Distribution of Gaussian fit stdev (sigma) values.
       * Graph with SiPM channel & slice on x-axis, Gaussian mean +/- stdev on y-axis.
   - In cscint_summary_DS and cscint_summary_SF directories (and ROOT top-level):
-      * cscint vs detId (US and Veto together, contiguous without empty gap between 1XXXX and 2XXXX)
+      * cscint vs detId (Veto, US, and DS together)
         with calculated errors as error bars and detector division markers.
       * cscint fit chi2ndf distribution.
-      * cscint value and error distributions (total, stat, syst).
+      * cscint value and error distributions (total, stat, syst, and per-subsystem summary).
   - Run category filtering (catI, catII, catIII) and multi-processing support.
 
 Usage:
@@ -35,6 +42,7 @@ import json
 import shutil
 import tempfile
 import argparse
+import subprocess
 import multiprocessing
 import numpy as np
 
@@ -89,16 +97,49 @@ def normalize_categories(cat_args):
     return list(dict.fromkeys(cats))
 
 
-def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=-5.0,
-                       min_slice_entries=15, collect_slices=True, n_segments=5):
+def get_channel_config(det_id: int, sipm: int):
     """
-    Fits c_scint for a single 2D histogram h2 (x_pred vs dt).
+    Returns (subsystem_name, fit_min, fit_max, side_sign, is_vertical, n_segments)
+    Subsystems:
+      - Veto hor (detID 10000..11999): fit [-42.0, -12.0], side_sign: +1.0 (sipm < 8) / -1.0 (sipm >= 8), n_seg=3
+      - Veto ver (detID 12000..12999): fit [13.0, 55.0], side_sign: +1.0 (top readout), is_vert=True, n_seg=3
+      - US hor (detID 20000..24999): fit [-55.0, -5.0], side_sign: +1.0 (sipm < 8) / -1.0 (sipm >= 8), n_seg=5
+      - DS hor (detID 30000..32999, bar < 60): fit [-55.0, -5.0], side_sign: -1.0 (sipm==0, Left) / +1.0 (sipm==1, Right), n_seg=5
+      - DS ver (detID 30000..33999, bar >= 60): fit [10.0, 66.0], side_sign: +1.0 (top readout), is_vert=True, n_seg=5
+    """
+    subsys = det_id // 10000
+    pl = (det_id % 10000) // 1000
+    bar = det_id % 1000
+
+    if subsys == 1:
+        if pl >= 2:
+            return "Veto", 13.0, 55.0, 1.0, True, 3
+        else:
+            side_sign = 1.0 if sipm < 8 else -1.0
+            return "Veto", -42.0, -12.0, side_sign, False, 3
+    elif subsys == 2:
+        side_sign = 1.0 if sipm < 8 else -1.0
+        return "US", -55.0, -5.0, side_sign, False, 5
+    elif subsys == 3:
+        if bar >= 60:
+            return "DS", 10.0, 66.0, 1.0, True, 5
+        else:
+            side_sign = -1.0 if sipm == 0 else 1.0
+            return "DS", -55.0, -5.0, side_sign, False, 5
+    else:
+        side_sign = 1.0 if sipm < 8 else -1.0
+        return "Unknown", -55.0, -5.0, side_sign, False, 5
+
+
+def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=-5.0,
+                       side_sign=1.0, min_slice_entries=15, collect_slices=True, n_segments=5):
+    """
+    Fits c_scint for a single 2D histogram h2 (x_pred or y_pred vs dt).
     Also extracts vertical slice projection histograms, Gaussian fits, and slice statistics.
     """
     if h2 is None or h2.GetEntries() < 100:
         return None
 
-    side_sign = 1.0 if sipm < 8 else -1.0
     gr = ROOT.TGraphErrors()
 
     ip = 0
@@ -259,7 +300,7 @@ def fit_single_2d_hist(h2, ref="DS", sipm=0, ch_name="", fit_min=-55.0, fit_max=
     }
 
 
-def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: float, fit_max: float):
+def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: float, fit_max: float, is_vertical: bool = False):
     """
     Constructs a 2-pad canvas containing:
       Top pad: 2D histogram + slice data points (stat error) + total uncertainty band + linear fit line.
@@ -267,6 +308,8 @@ def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: flo
       Bottom pad: Data / Fit ratio with stat and syst errors drawn as hatched areas.
     """
     ROOT.TH1.AddDirectory(False)
+    pos_axis = "y" if is_vertical else "x"
+    pos_title = f"{pos_axis}_{{predicted}} [cm]"
     cname = f"c_cscint_{ref}_{fixed_ch}"
     c = ROOT.TCanvas(cname, f"c_scint Fit - Channel {fixed_ch} ({ref} Reference)", 950, 800)
 
@@ -380,7 +423,7 @@ def build_cscint_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, fit_min: flo
     g_ratio_tot = ROOT.TGraphErrors(n_pts, x_arr, ratio, dx_band, eratio_tot)
     g_ratio_tot.SetName(f"g_ratio_total_{ref}_{fixed_ch}")
     ROOT.SetOwnership(g_ratio_tot, False)
-    g_ratio_tot.SetTitle(";x_{predicted} [cm];Data / Fit")
+    g_ratio_tot.SetTitle(f";{pos_title};Data / Fit")
     g_ratio_tot.SetFillColor(ROOT.kBlue + 2)
     g_ratio_tot.SetFillStyle(3004)
     g_ratio_tot.SetLineColor(ROOT.kBlue + 2)
@@ -558,6 +601,14 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
     gr_us.SetMarkerColor(ROOT.kAzure + 2)
     gr_us.SetLineColor(ROOT.kAzure + 2)
 
+    gr_ds = ROOT.TGraphErrors()
+    gr_ds.SetName(f"gr_cscint_ds_{ref}")
+    gr_ds.SetTitle(f"c_{{scint}} vs Detector ID ({ref});Detector ID;c_{{scint}} [cm/ns]")
+    gr_ds.SetMarkerStyle(22)
+    gr_ds.SetMarkerSize(0.6)
+    gr_ds.SetMarkerColor(ROOT.kTeal + 2)
+    gr_ds.SetLineColor(ROOT.kTeal + 2)
+
     gr_det_mean = ROOT.TGraphErrors()
     gr_det_mean.SetName(f"gr_cscint_det_mean_{ref}")
     gr_det_mean.SetTitle(f"Detector Bar Mean c_{{scint}} ({ref});Detector ID;c_{{scint}} [cm/ns]")
@@ -594,6 +645,7 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
 
     iv = 0
     iu = 0
+    ids = 0
     ia = 0
     bar_groups = {}
 
@@ -623,10 +675,14 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
             gr_veto.SetPoint(iv, x, c_val)
             gr_veto.SetPointError(iv, 0.0, c_err)
             iv += 1
-        else:
+        elif det < 30000:
             gr_us.SetPoint(iu, x, c_val)
             gr_us.SetPointError(iu, 0.0, c_err)
             iu += 1
+        else:
+            gr_ds.SetPoint(ids, x, c_val)
+            gr_ds.SetPointError(ids, 0.0, c_err)
+            ids += 1
 
         gr_all.SetPoint(ia, x, c_val)
         gr_all.SetPointError(ia, 0.0, c_err)
@@ -647,7 +703,7 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
         ib += 1
 
     # Standalone cscint vs detID canvas
-    c_det = ROOT.TCanvas(f"c_cscint_vs_detID_{ref}", f"c_scint vs Detector ID ({ref})", 1300, 650)
+    c_det = ROOT.TCanvas(f"c_cscint_vs_detID_{ref}", f"c_scint vs Detector ID ({ref})", 1400, 650)
     c_det.SetGrid()
     c_det.SetLeftMargin(0.08)
     c_det.SetRightMargin(0.04)
@@ -658,47 +714,89 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
     h_axis.SetStats(0)
     h_axis.GetYaxis().SetRangeUser(10.0, 18.0)
     h_axis.GetXaxis().SetTitleOffset(1.3)
-    h_axis.GetXaxis().SetLabelSize(0.032)
+    h_axis.GetXaxis().SetLabelSize(0.028)
 
     veto_count = sum(1 for d in det_ids if d < 20000)
+    us_count = sum(1 for d in det_ids if 20000 <= d < 30000)
+    ds_count = sum(1 for d in det_ids if d >= 30000)
+
+    label_step = max(1, n_bars // 30)
     for i, det in enumerate(det_ids):
-        if i % 3 == 0 or det in (10000, 11000, 20000, 21000, 22000, 23000, 24000):
+        is_boundary = (det in (10000, 11000, 12000, 20000, 21000, 22000, 23000, 24000, 30000, 31000, 32000, 33000))
+        if i % label_step == 0 or is_boundary:
             h_axis.GetXaxis().SetBinLabel(i + 1, str(det))
         else:
             h_axis.GetXaxis().SetBinLabel(i + 1, "")
     h_axis.GetXaxis().LabelsOption("v")
     h_axis.Draw("AXIS")
 
-    line_sep = ROOT.TLine(veto_count - 0.5, 10.0, veto_count - 0.5, 18.0)
-    ROOT.SetOwnership(line_sep, False)
-    line_sep.SetLineStyle(7)
-    line_sep.SetLineColor(ROOT.kGray + 2)
-    line_sep.SetLineWidth(2)
-    line_sep.Draw()
+    lines = []
+    labels = []
 
-    t_veto = ROOT.TLatex(max(0.5, veto_count / 2.0 - 0.5), 17.4, "VETO")
-    ROOT.SetOwnership(t_veto, False)
-    t_veto.SetTextAlign(22)
-    t_veto.SetTextFont(62)
-    t_veto.SetTextColor(ROOT.kRed + 2)
-    t_veto.Draw()
+    # Separation line between Veto and US
+    if veto_count > 0 and us_count > 0:
+        l_vus = ROOT.TLine(veto_count - 0.5, 10.0, veto_count - 0.5, 18.0)
+        l_vus.SetLineStyle(7)
+        l_vus.SetLineColor(ROOT.kGray + 2)
+        l_vus.SetLineWidth(2)
+        ROOT.SetOwnership(l_vus, False)
+        l_vus.Draw()
+        lines.append(l_vus)
 
-    t_us = ROOT.TLatex(veto_count + (n_bars - veto_count) / 2.0 - 0.5, 17.4, "UPSTREAM (US)")
-    ROOT.SetOwnership(t_us, False)
-    t_us.SetTextAlign(22)
-    t_us.SetTextFont(62)
-    t_us.SetTextColor(ROOT.kAzure + 2)
-    t_us.Draw()
+    # Separation line between US and DS
+    if us_count > 0 and ds_count > 0:
+        l_usds = ROOT.TLine(veto_count + us_count - 0.5, 10.0, veto_count + us_count - 0.5, 18.0)
+        l_usds.SetLineStyle(7)
+        l_usds.SetLineColor(ROOT.kGray + 2)
+        l_usds.SetLineWidth(2)
+        ROOT.SetOwnership(l_usds, False)
+        l_usds.Draw()
+        lines.append(l_usds)
 
-    gr_veto.Draw("PE SAME")
-    gr_us.Draw("PE SAME")
+    if veto_count > 0:
+        t_veto = ROOT.TLatex(max(0.5, veto_count / 2.0 - 0.5), 17.4, "VETO")
+        ROOT.SetOwnership(t_veto, False)
+        t_veto.SetTextAlign(22)
+        t_veto.SetTextFont(62)
+        t_veto.SetTextColor(ROOT.kRed + 2)
+        t_veto.Draw()
+        labels.append(t_veto)
+
+    if us_count > 0:
+        t_us = ROOT.TLatex(veto_count + us_count / 2.0 - 0.5, 17.4, "UPSTREAM (US)")
+        ROOT.SetOwnership(t_us, False)
+        t_us.SetTextAlign(22)
+        t_us.SetTextFont(62)
+        t_us.SetTextColor(ROOT.kAzure + 2)
+        t_us.Draw()
+        labels.append(t_us)
+
+    if ds_count > 0:
+        t_ds = ROOT.TLatex(veto_count + us_count + ds_count / 2.0 - 0.5, 17.4, "DOWNSTREAM (DS)")
+        ROOT.SetOwnership(t_ds, False)
+        t_ds.SetTextAlign(22)
+        t_ds.SetTextFont(62)
+        t_ds.SetTextColor(ROOT.kTeal + 2)
+        t_ds.Draw()
+        labels.append(t_ds)
+
+    if iv > 0:
+        gr_veto.Draw("PE SAME")
+    if iu > 0:
+        gr_us.Draw("PE SAME")
+    if ids > 0:
+        gr_ds.Draw("PE SAME")
     gr_det_mean.Draw("PE SAME")
 
-    leg = ROOT.TLegend(0.12, 0.76, 0.40, 0.90)
+    leg = ROOT.TLegend(0.12, 0.76, 0.45, 0.90)
     leg.SetBorderSize(1)
     leg.SetFillColorAlpha(ROOT.kWhite, 0.85)
-    leg.AddEntry(gr_veto, "Veto SiPMs", "lep")
-    leg.AddEntry(gr_us, "US SiPMs", "lep")
+    if iv > 0:
+        leg.AddEntry(gr_veto, "Veto SiPMs", "lep")
+    if iu > 0:
+        leg.AddEntry(gr_us, "US SiPMs", "lep")
+    if ids > 0:
+        leg.AddEntry(gr_ds, "DS SiPMs", "lep")
     leg.AddEntry(gr_det_mean, "Bar Weighted Mean", "lep")
     ROOT.SetOwnership(leg, False)
     leg.Draw()
@@ -713,11 +811,16 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
     h_axis_clone = h_axis.Clone(f"h_axis_clone_{ref}")
     ROOT.SetOwnership(h_axis_clone, False)
     h_axis_clone.Draw("AXIS")
-    line_sep_clone = line_sep.Clone()
-    ROOT.SetOwnership(line_sep_clone, False)
-    line_sep_clone.Draw()
-    gr_veto.Draw("PE SAME")
-    gr_us.Draw("PE SAME")
+    for l_obj in lines:
+        l_clone = l_obj.Clone()
+        ROOT.SetOwnership(l_clone, False)
+        l_clone.Draw()
+    if iv > 0:
+        gr_veto.Draw("PE SAME")
+    if iu > 0:
+        gr_us.Draw("PE SAME")
+    if ids > 0:
+        gr_ds.Draw("PE SAME")
     gr_det_mean.Draw("PE SAME")
 
     c_summary.cd(2)
@@ -770,18 +873,27 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
     Also produces slice summary and global cscint distributions across all SiPMs.
     """
     target_path = output_path if output_path else root_path
+    mode = "UPDATE" if (save_canvas or save_slices) else "READ"
+    is_network = root_path.startswith("/eos") or (target_path and target_path.startswith("/eos"))
 
-    is_network = root_path.startswith("/eos") or target_path.startswith("/eos")
-    if is_network:
+    if is_network and mode == "UPDATE":
         tmp_fd, work_file = tempfile.mkstemp(suffix=".root", prefix="cscint_fit_")
         os.close(tmp_fd)
-        shutil.copyfile(root_path, work_file)
+        if shutil.which("xrdcp") and "/eos/" in root_path:
+            server = "root://eosuser.cern.ch/" if "/eos/user/" in root_path else "root://eospublic.cern.ch/"
+            subpath = root_path if root_path.startswith("/eos/") else f"/eos/{root_path}"
+            subprocess.run(["xrdcp", "-f", f"{server}{subpath}", work_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            shutil.copyfile(root_path, work_file)
+    elif mode == "READ" and root_path.startswith("/eos/user/"):
+        work_file = f"root://eosuser.cern.ch/{root_path}"
+    elif mode == "READ" and root_path.startswith("/eos/experiment/"):
+        work_file = f"root://eospublic.cern.ch/{root_path}"
     else:
-        work_file = target_path
-        if output_path and output_path != root_path:
+        work_file = target_path if (output_path and output_path != root_path) else root_path
+        if output_path and output_path != root_path and mode == "UPDATE":
             shutil.copyfile(root_path, work_file)
 
-    mode = "UPDATE" if (save_canvas or save_slices) else "READ"
     f = ROOT.TFile.Open(work_file, mode)
     if not f or f.IsZombie():
         print(f"[ERROR] Cannot open ROOT file: {work_file}", file=sys.stderr)
@@ -812,26 +924,27 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         if not ch_dir:
             ch_dir = f.mkdir(k)
 
-        is_veto = (detID < 20000)
-        if is_veto:
+        subsys_name, fit_min_default, fit_max_default, side_sign, is_vert, n_seg = get_channel_config(detID, sipm)
+
+        # Allow user override for veto bounds if horizontal veto
+        if subsys_name == "Veto" and not is_vert:
             fit_min_ds, fit_max_ds = veto_min, veto_max
             fit_min_sf, fit_max_sf = veto_min, veto_max
             n_seg = veto_n_segments
         else:
-            fit_min_ds, fit_max_ds = -55.0, -5.0
-            fit_min_sf, fit_max_sf = -44.0, -8.0
-            n_seg = 5
+            fit_min_ds, fit_max_ds = fit_min_default, fit_max_default
+            fit_min_sf, fit_max_sf = fit_min_default, fit_max_default
 
         # Fit DS
         h2_ds = f.Get(f"{k}/dt-DS")
         if h2_ds and h2_ds.InheritsFrom("TH2"):
             res_ds = fit_single_2d_hist(
                 h2_ds, ref="DS", sipm=sipm, ch_name=k, fit_min=fit_min_ds, fit_max=fit_max_ds,
-                min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
+                side_sign=side_sign, min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
             )
             if res_ds is not None:
                 if save_canvas:
-                    canv_ds = build_cscint_canvas(h2_ds, k, "DS", res_ds, fit_min=fit_min_ds, fit_max=fit_max_ds)
+                    canv_ds = build_cscint_canvas(h2_ds, k, "DS", res_ds, fit_min=fit_min_ds, fit_max=fit_max_ds, is_vertical=is_vert)
                     ch_dir.WriteObject(canv_ds, canv_ds.GetName(), "kOverwrite")
                     ch_dir.WriteObject(canv_ds, "c_cscint_DS", "kOverwrite")
                     canv_ds.Close()
@@ -854,6 +967,8 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                     res_ds.pop(arr_k, None)
                 res_ds["sipm"] = sipm
                 res_ds["detID"] = detID
+                res_ds["subsystem"] = subsys_name
+                res_ds["is_vertical"] = is_vert
                 results["DS"][k] = res_ds
 
         # Fit SF
@@ -861,11 +976,11 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
         if h2_sf and h2_sf.InheritsFrom("TH2"):
             res_sf = fit_single_2d_hist(
                 h2_sf, ref="SF", sipm=sipm, ch_name=k, fit_min=fit_min_sf, fit_max=fit_max_sf,
-                min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
+                side_sign=side_sign, min_slice_entries=15, collect_slices=save_slices, n_segments=n_seg
             )
             if res_sf is not None:
                 if save_canvas:
-                    canv_sf = build_cscint_canvas(h2_sf, k, "SF", res_sf, fit_min=fit_min_sf, fit_max=fit_max_sf)
+                    canv_sf = build_cscint_canvas(h2_sf, k, "SF", res_sf, fit_min=fit_min_sf, fit_max=fit_max_sf, is_vertical=is_vert)
                     ch_dir.WriteObject(canv_sf, canv_sf.GetName(), "kOverwrite")
                     ch_dir.WriteObject(canv_sf, "c_cscint_SF", "kOverwrite")
                     canv_sf.Close()
@@ -888,6 +1003,8 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                     res_sf.pop(arr_k, None)
                 res_sf["sipm"] = sipm
                 res_sf["detID"] = detID
+                res_sf["subsystem"] = subsys_name
+                res_sf["is_vertical"] = is_vert
                 results["SF"][k] = res_sf
 
         if verbose and (idx + 1) % 100 == 0:
@@ -916,10 +1033,11 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                 if not c_dir:
                     c_dir = f.mkdir(f"cscint_summary_{ref}")
                 c_dir.cd()
-                for obj_key in ("gr_veto", "gr_us", "gr_all", "gr_det_mean", "h_chi2", "h_val",
+                for obj_key in ("gr_veto", "gr_us", "gr_ds", "gr_all", "gr_det_mean", "h_chi2", "h_val",
                                 "h_err_tot", "h_err_stat", "h_err_syst", "c_det", "c_summary"):
-                    obj = c_plots[obj_key]
-                    c_dir.WriteObject(obj, obj.GetName(), "kOverwrite")
+                    if obj_key in c_plots:
+                        obj = c_plots[obj_key]
+                        c_dir.WriteObject(obj, obj.GetName(), "kOverwrite")
 
                 f.cd()
                 f.WriteObject(c_plots["c_det"], c_plots["c_det"].GetName(), "kOverwrite")
@@ -929,15 +1047,38 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
 
     f.Close()
 
-    if is_network:
+    if is_network and mode == "UPDATE":
         os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
-        shutil.move(work_file, target_path)
+        if shutil.which("xrdcp") and "/eos/" in target_path:
+            server = "root://eosuser.cern.ch/" if "/eos/user/" in target_path else "root://eospublic.cern.ch/"
+            subpath = target_path if target_path.startswith("/eos/") else f"/eos/{target_path}"
+            subprocess.run(["xrdcp", "-f", work_file, f"{server}{subpath}"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(work_file):
+                os.remove(work_file)
+        else:
+            shutil.move(work_file, target_path)
 
     # Calculate summary statistics
     summary = {}
     for ref in ("DS", "SF"):
         c_vals = [d["c_scint"] for d in results[ref].values()]
         c_errs = [d["delta_c_tot"] for d in results[ref].values()]
+        subsys_summary = {}
+        for sub_name in ("Veto", "US", "DS"):
+            sub_vals = [d["c_scint"] for d in results[ref].values() if d.get("subsystem") == sub_name]
+            sub_errs = [d["delta_c_tot"] for d in results[ref].values() if d.get("subsystem") == sub_name]
+            if sub_vals:
+                sw = 1.0 / (np.array(sub_errs) ** 2)
+                subsys_summary[sub_name] = {
+                    "n_channels": len(sub_vals),
+                    "mean": float(np.mean(sub_vals)),
+                    "std": float(np.std(sub_vals)),
+                    "weighted_mean": float(np.sum(sw * np.array(sub_vals)) / np.sum(sw)),
+                    "weighted_sem": float(1.0 / np.sqrt(np.sum(sw))),
+                }
+            else:
+                subsys_summary[sub_name] = {"n_channels": 0, "mean": None, "std": None, "weighted_mean": None, "weighted_sem": None}
+
         if c_vals:
             weights = 1.0 / (np.array(c_errs) ** 2)
             w_mean = float(np.sum(weights * np.array(c_vals)) / np.sum(weights))
@@ -948,9 +1089,10 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
                 "std": float(np.std(c_vals)),
                 "weighted_mean": w_mean,
                 "weighted_sem": w_sem,
+                "subsystems": subsys_summary,
             }
         else:
-            summary[ref] = {"n_channels": 0, "mean": None, "std": None, "weighted_mean": None, "weighted_sem": None}
+            summary[ref] = {"n_channels": 0, "mean": None, "std": None, "weighted_mean": None, "weighted_sem": None, "subsystems": subsys_summary}
 
     results["summary"] = summary
     return results

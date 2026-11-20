@@ -334,6 +334,28 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
     af.Analysis.GetDSHaverage = safe_GetDSHaverage
 
+    # Pre-calculate plane Z positions for Veto, US, and DS dynamically from geometry
+    a_tmp, b_tmp = ROOT.TVector3(), ROOT.TVector3()
+    veto_z_planes = {}
+    n_veto_planes = M.systemAndPlanes.get(1, 2)
+    for pl in range(n_veto_planes):
+        mu_filter.GetPosition(10000 + pl * 1000, a_tmp, b_tmp)
+        veto_z_planes[pl] = (a_tmp.z() + b_tmp.z()) / 2.0
+
+    us_z_planes = {}
+    n_us_planes = M.systemAndPlanes.get(2, 5)
+    for pl in range(n_us_planes):
+        mu_filter.GetPosition(20000 + pl * 1000, a_tmp, b_tmp)
+        us_z_planes[pl] = (a_tmp.z() + b_tmp.z()) / 2.0
+
+    ds_z_planes = {}
+    for st in range(4):
+        if st < 3:
+            mu_filter.GetPosition(30000 + st * 1000, a_tmp, b_tmp)
+            ds_z_planes[(st, "hor")] = (a_tmp.z() + b_tmp.z()) / 2.0
+        mu_filter.GetPosition(30000 + st * 1000 + 60, a_tmp, b_tmp)
+        ds_z_planes[(st, "ver")] = (a_tmp.z() + b_tmp.z()) / 2.0
+
     # Histogram cache: channel_key -> {'dt-DS': TH2F, 'dt-SF': TH2F}
     hist_cache = {}
 
@@ -342,27 +364,42 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
             hist_cache[channel_key] = {}
         if hist_type not in hist_cache[channel_key]:
             det_id = int(channel_key.split("_")[0])
-            subsys = det_id // 10000
+            subsys, pl, bar = analysis.parseDetID(det_id)
 
             if subsys == 1:
-                # Veto: bar extent ~ [-48, -7] cm
-                # x range: (-53, -7) with 1 cm bins (46 bins)
-                # y range: (-27.5, 27.5) with 0.25 ns bins (220 bins)
-                nbins_x, x_min, x_max = 46, -53.0, -7.0
-                nbins_y, y_min, y_max = 220, -27.5, 27.5
+                if pl >= 2:
+                    # Vertical Veto (Plane 2, 2024+): 13 <= y <= 55 cm
+                    pos_name = "y"
+                    nbins_pos, pos_min, pos_max = 50, 10.0, 60.0
+                else:
+                    # Horizontal Veto: -42 <= x <= -12 cm
+                    pos_name = "x"
+                    nbins_pos, pos_min, pos_max = 46, -53.0, -7.0
+            elif subsys == 2:
+                # Upstream horizontal: -55 <= x <= -5 cm
+                pos_name = "x"
+                nbins_pos, pos_min, pos_max = 60, -60.0, 0.0
+            elif subsys == 3:
+                if bar >= 60:
+                    # Downstream vertical: 10 <= y <= 66 cm
+                    pos_name = "y"
+                    nbins_pos, pos_min, pos_max = 60, 8.0, 68.0
+                else:
+                    # Downstream horizontal: -55 <= x <= -5 cm
+                    pos_name = "x"
+                    nbins_pos, pos_min, pos_max = 65, -65.0, 0.0
             else:
-                # Upstream: bar extent ~ [-79, +3] cm
-                # x range: (-60, 0) with 1 cm bins (60 bins)
-                # y range: (-27.5, 27.5) with 0.25 ns bins (220 bins)
-                nbins_x, x_min, x_max = 60, -60.0, 0.0
-                nbins_y, y_min, y_max = 220, -27.5, 27.5
+                pos_name = "x"
+                nbins_pos, pos_min, pos_max = 60, -60.0, 0.0
+
+            nbins_dt, dt_min, dt_max = 220, -27.5, 27.5
 
             if hist_type == "dt-DS":
-                title = f"{channel_key} t_{{0}}^{{DS}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{DS}} - t_{{SiPM}} [ns]"
-                h = ROOT.TH2F(f"dt-DS_{channel_key}", title, nbins_x, x_min, x_max, nbins_y, y_min, y_max)
+                title = f"{channel_key} t_{{0}}^{{DS}} - t_{{SiPM}} vs {pos_name}-position (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{0}}^{{DS}} - t_{{SiPM}} [ns]"
+                h = ROOT.TH2F(f"dt-DS_{channel_key}", title, nbins_pos, pos_min, pos_max, nbins_dt, dt_min, dt_max)
             else:
-                title = f"{channel_key} t_{{0}}^{{SF}} - t_{{SiPM}} vs x-position (Run {run_nr});x_{{predicted}} [cm];t_{{0}}^{{SF}} - t_{{SiPM}} [ns]"
-                h = ROOT.TH2F(f"dt-SF_{channel_key}", title, nbins_x, x_min, x_max, nbins_y, y_min, y_max)
+                title = f"{channel_key} t_{{0}}^{{SF}} - t_{{SiPM}} vs {pos_name}-position (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{0}}^{{SF}} - t_{{SiPM}} [ns]"
+                h = ROOT.TH2F(f"dt-SF_{channel_key}", title, nbins_pos, pos_min, pos_max, nbins_dt, dt_min, dt_max)
             h.SetDirectory(0)
             hist_cache[channel_key][hist_type] = h
         return hist_cache[channel_key][hist_type]
@@ -379,11 +416,13 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
     heartbeat = 50000
 
-    def passes_fiducial(det_id, x_ex, y_ex, cut=5.0):
+    def passes_fiducial(det_id, x_ex, y_ex):
         a_pt, b_pt = ROOT.TVector3(), ROOT.TVector3()
         mu_filter.GetPosition(det_id, a_pt, b_pt)
-        subsys, pl, _ = analysis.parseDetID(det_id)
-        if subsys == 1 and pl == 2:
+        subsys, pl, bar = analysis.parseDetID(det_id)
+        is_vertical = (subsys == 1 and pl >= 2) or (subsys == 3 and bar >= 60)
+        cut = 2.0 if is_vertical else 5.0
+        if is_vertical:
             return (min(a_pt.y(), b_pt.y()) + cut) <= y_ex <= (max(a_pt.y(), b_pt.y()) - cut)
         else:
             return (min(a_pt.x(), b_pt.x()) + cut) <= x_ex <= (max(a_pt.x(), b_pt.x()) - cut)
@@ -486,16 +525,16 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         if best_ds:
             pos_ds = best_ds["pos"]
             mom_ds = best_ds["mom"]
-            n_us_planes = M.systemAndPlanes.get(2, 5)
-            for plane in range(n_us_planes):
-                z_key = 20 + plane
-                if z_key not in M.zPos["MuFilter"]:
-                    continue
-                zEx = M.zPos["MuFilter"][z_key]
+            for plane, zEx in us_z_planes.items():
                 lam = (zEx - pos_ds.z()) / mom_ds.z()
                 xEx = pos_ds.x() + lam * mom_ds.x()
                 yEx = pos_ds.y() + lam * mom_ds.y()
                 node = nav.FindNode(xEx, yEx, zEx)
+                if not node or node.GetName() == "cave_1":
+                    for dz in [0.4, -0.4, 0.8, -0.8]:
+                        node = nav.FindNode(xEx, yEx, zEx + dz)
+                        if node and node.GetName() != "cave_1":
+                            break
                 if node:
                     node_name = node.GetName()
                     if node_name.startswith("volMuUpstreamBar_"):
@@ -511,27 +550,60 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
         if best_sf:
             pos_sf = best_sf["pos"]
             mom_sf = best_sf["mom"]
-            n_veto_planes = M.systemAndPlanes.get(1, 2)
-            for plane in range(n_veto_planes):
-                z_key = 10 + plane
-                if z_key not in M.zPos["MuFilter"]:
-                    continue
-                zEx = M.zPos["MuFilter"][z_key]
+            for plane, zEx in veto_z_planes.items():
                 lam = (zEx - pos_sf.z()) / mom_sf.z()
                 xEx = pos_sf.x() + lam * mom_sf.x()
                 yEx = pos_sf.y() + lam * mom_sf.y()
                 node = nav.FindNode(xEx, yEx, zEx)
+                if not node or node.GetName() == "cave_1":
+                    for dz in [0.4, -0.4, 0.8, -0.8]:
+                        node = nav.FindNode(xEx, yEx, zEx + dz)
+                        if node and node.GetName() != "cave_1":
+                            break
                 if node:
                     node_name = node.GetName()
                     if node_name.startswith("volVetoBar_") or node_name.startswith("volVetoBar_ver_"):
                         try:
                             bar_det_id = int(node_name.split("_")[-1])
                             if passes_fiducial(bar_det_id, xEx, yEx):
-                                expected_veto_bars[plane] = (bar_det_id, xEx)
+                                pred_val = yEx if plane >= 2 else xEx
+                                expected_veto_bars[plane] = (bar_det_id, pred_val)
                         except ValueError:
                             pass
 
-        # 5. Loop over Digi_MuFilterHits for both Veto (s == 1) and Upstream (s == 2)
+        #    - Downstream planes crossed by DS track
+        expected_ds_bars = {}
+        if best_ds:
+            pos_ds = best_ds["pos"]
+            mom_ds = best_ds["mom"]
+            for (st, orientation), zEx in ds_z_planes.items():
+                lam = (zEx - pos_ds.z()) / mom_ds.z()
+                xEx = pos_ds.x() + lam * mom_ds.x()
+                yEx = pos_ds.y() + lam * mom_ds.y()
+                node = nav.FindNode(xEx, yEx, zEx)
+                if not node or node.GetName() == "cave_1":
+                    for dz in [0.4, -0.4, 0.8, -0.8]:
+                        node = nav.FindNode(xEx, yEx, zEx + dz)
+                        if node and node.GetName() != "cave_1":
+                            break
+                if node:
+                    node_name = node.GetName()
+                    if orientation == "hor" and node_name.startswith("volMuDownstreamBar_hor_"):
+                        try:
+                            bar_det_id = int(node_name.split("_")[-1])
+                            if passes_fiducial(bar_det_id, xEx, yEx):
+                                expected_ds_bars[(st, "hor")] = (bar_det_id, xEx)
+                        except ValueError:
+                            pass
+                    elif orientation == "ver" and node_name.startswith("volMuDownstreamBar_ver_"):
+                        try:
+                            bar_det_id = int(node_name.split("_")[-1])
+                            if passes_fiducial(bar_det_id, xEx, yEx):
+                                expected_ds_bars[(st, "ver")] = (bar_det_id, yEx)
+                        except ValueError:
+                            pass
+
+        # 5. Loop over Digi_MuFilterHits for Veto (s == 1), Upstream (s == 2), and Downstream (s == 3)
         for hit in event.Digi_MuFilterHits:
             if not hit.isValid():
                 continue
@@ -542,13 +614,21 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
             if s == 2:
                 if not best_ds or p not in expected_us_bars or expected_us_bars[p][0] != detID:
                     continue
-                x_pred = expected_us_bars[p][1]
+                pos_pred = expected_us_bars[p][1]
 
             # Veto bars (s == 1): ALWAYS use SciFi track
             elif s == 1:
                 if not best_sf or p not in expected_veto_bars or expected_veto_bars[p][0] != detID:
                     continue
-                x_pred = expected_veto_bars[p][1]
+                pos_pred = expected_veto_bars[p][1]
+
+            # Downstream bars (s == 3): ALWAYS use DS track
+            elif s == 3:
+                orientation = "ver" if b >= 60 else "hor"
+                key = (p, orientation)
+                if not best_ds or key not in expected_ds_bars or expected_ds_bars[key][0] != detID:
+                    continue
+                pos_pred = expected_ds_bars[key][1]
 
             else:
                 continue
@@ -565,7 +645,15 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                     continue
 
                 # For vertical veto bars (subsystem 1, plane 2, detID >= 12000), readout is top side only (0..7)
-                if s == 1 and p == 2 and sipm_num >= 8:
+                if s == 1 and p >= 2 and sipm_num >= 8:
+                    continue
+
+                # For Downstream horizontal bars (s == 3, b < 60), readout is 2 channels: 0 (Left), 1 (Right)
+                if s == 3 and b < 60 and sipm_num > 1:
+                    continue
+
+                # For Downstream vertical bars (s == 3, b >= 60), readout is top side only: channel 0
+                if s == 3 and b >= 60 and sipm_num > 0:
                     continue
 
                 # Skip known dead channel
@@ -582,11 +670,11 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
                 if has_valid_ds:
                     dt_ds = tds0_val - t_sipm
-                    get_hist(ch_key, "dt-DS").Fill(x_pred, dt_ds)
+                    get_hist(ch_key, "dt-DS").Fill(pos_pred, dt_ds)
 
                 if has_valid_sf:
                     dt_sf = tsf0_val - t_sipm
-                    get_hist(ch_key, "dt-SF").Fill(x_pred, dt_sf)
+                    get_hist(ch_key, "dt-SF").Fill(pos_pred, dt_sf)
 
     # 6. Write channel histograms into structured temp ROOT file
     out_f = ROOT.TFile.Open(temp_output, "RECREATE")
