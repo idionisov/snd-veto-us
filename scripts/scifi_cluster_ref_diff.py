@@ -336,14 +336,14 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
 
     z_station1 = plane_z.get((1, 0), 300.0)
 
-    # Histogram cache: plane_key -> {'dt-SF': TH2F, 'dt-DS': TH2F, ...}
+    # Histogram cache: sipm_key -> {'dt-SF': TH2F, 'dt-DS': TH2F, ...}
     hist_cache = {}
 
-    def get_hist(plane_key, hist_type):
-        if plane_key not in hist_cache:
-            hist_cache[plane_key] = {}
-        if hist_type not in hist_cache[plane_key]:
-            is_vert = "_V" in plane_key
+    def get_hist(sipm_key, hist_type):
+        if sipm_key not in hist_cache:
+            hist_cache[sipm_key] = {}
+        if hist_type not in hist_cache[sipm_key]:
+            is_vert = "V" in sipm_key.split("_")[0]
             if is_vert:
                 # Vertical plane: measurement is x, light propagates along y (10 <= y <= 58 cm)
                 pos_name = "y"
@@ -354,23 +354,32 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                 nbins_pos, pos_min, pos_max = 45, -50.0, -5.0
 
             if hist_type == "dt-SF":
-                title = f"{plane_key} t_{{SiPM}} - t_{{0}}^{{SF}} vs {pos_name} (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{SiPM}} - t_{{0}}^{{SF}} [ns]"
-                h = ROOT.TH2F(f"dt-SF_{plane_key}", title, nbins_pos, pos_min, pos_max, 160, -8.0, 12.0)
+                title = f"{sipm_key} t_{{SiPM}} - t_{{0}}^{{SF}} vs {pos_name} (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{SiPM}} - t_{{0}}^{{SF}} [ns]"
+                h = ROOT.TH2F(f"dt-SF_{sipm_key}", title, nbins_pos, pos_min, pos_max, 160, -8.0, 12.0)
             elif hist_type == "dt-DS":
-                title = f"{plane_key} t_{{SiPM}} - t_{{0}}^{{DS}} vs {pos_name} (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{SiPM}} - t_{{0}}^{{DS}} [ns]"
-                h = ROOT.TH2F(f"dt-DS_{plane_key}", title, nbins_pos, pos_min, pos_max, 200, -22.0, 8.0)
+                title = f"{sipm_key} t_{{SiPM}} - t_{{0}}^{{DS}} vs {pos_name} (Run {run_nr});{pos_name}_{{predicted}} [cm];t_{{SiPM}} - t_{{0}}^{{DS}} [ns]"
+                h = ROOT.TH2F(f"dt-DS_{sipm_key}", title, nbins_pos, pos_min, pos_max, 200, -22.0, 8.0)
             elif hist_type == "cluster_size":
-                title = f"{plane_key} Cluster Size (|residual| <= 1 mm);Cluster Hits;Clusters"
-                h = ROOT.TH1F(f"cluster_size_{plane_key}", title, 10, 0.5, 10.5)
+                title = f"{sipm_key} Cluster Size (|residual| <= 1 mm);Cluster Hits;Clusters"
+                h = ROOT.TH1F(f"cluster_size_{sipm_key}", title, 10, 0.5, 10.5)
             elif hist_type == "residual_meas":
-                title = f"{plane_key} Track-Hit Residual;Residual [mm];Hits"
-                h = ROOT.TH1F(f"residual_meas_{plane_key}", title, 100, -1.0, 1.0)
+                title = f"{sipm_key} Track-Hit Residual;Residual [mm];Hits"
+                h = ROOT.TH1F(f"residual_meas_{sipm_key}", title, 100, -1.0, 1.0)
             else:
                 raise ValueError(f"Unknown hist_type {hist_type}")
 
             h.SetDirectory(0)
-            hist_cache[plane_key][hist_type] = h
-        return hist_cache[plane_key][hist_type]
+            hist_cache[sipm_key][hist_type] = h
+        return hist_cache[sipm_key][hist_type]
+
+    # Pre-create all 120 SiPM keys
+    for s in range(1, 6):
+        for ori in ["H", "V"]:
+            for m in range(3):
+                for r in range(4):
+                    k = f"SF{s}{ori}_{m}_{r}"
+                    for ht in ["dt-SF", "dt-DS", "cluster_size", "residual_meas"]:
+                        get_hist(k, ht)
 
     actual_entries = M.GetEntries()
     events_to_process = min(max_ev, actual_entries) if max_ev > 0 else actual_entries
@@ -489,31 +498,23 @@ def run_worker(run_nr, break_events, temp_output, partition=-1, geo_file_overrid
                 n_clusters_total += 1
                 t_sipm = min(h["time_ns"] for h in cluster_hits)
                 mean_pos_pred = cluster_hits[0]["pos_pred"]
-                mat_id = (cluster_hits[0]["detID"] // 10000) % 10
-                sipm_id = (cluster_hits[0]["detID"] // 1000) % 10
-                sipm_global = mat_id * 4 + sipm_id
+                det0 = cluster_hits[0]["detID"]
+                mat_id = (det0 // 10000) % 10
+                sipm_id = (det0 // 1000) % 10
+                ori = "V" if is_vert else "H"
+                p_key = f"SF{s}{ori}_{mat_id}_{sipm_id}"
 
-                plane_name = f"station{s}_{'V' if is_vert else 'H'}"
-                targets = [
-                    plane_name,
-                    f"{plane_name}_mat{mat_id}",
-                    f"{plane_name}_mat{mat_id}_sipm{sipm_id}",
-                    f"{plane_name}_sipm{sipm_global}",
-                    f"inclusive_{'V' if is_vert else 'H'}"
-                ]
+                get_hist(p_key, "cluster_size").Fill(len(cluster_hits))
+                for ch in cluster_hits:
+                    get_hist(p_key, "residual_meas").Fill(ch["residual_mm"])
 
-                for p_key in targets:
-                    get_hist(p_key, "cluster_size").Fill(len(cluster_hits))
-                    for ch in cluster_hits:
-                        get_hist(p_key, "residual_meas").Fill(ch["residual_mm"])
+                if has_valid_sf:
+                    dt_sf = t_sipm - tsf0_val
+                    get_hist(p_key, "dt-SF").Fill(mean_pos_pred, dt_sf)
 
-                    if has_valid_sf:
-                        dt_sf = t_sipm - tsf0_val
-                        get_hist(p_key, "dt-SF").Fill(mean_pos_pred, dt_sf)
-
-                    if has_valid_ds:
-                        dt_ds = t_sipm - tds0_val
-                        get_hist(p_key, "dt-DS").Fill(mean_pos_pred, dt_ds)
+                if has_valid_ds:
+                    dt_ds = t_sipm - tds0_val
+                    get_hist(p_key, "dt-DS").Fill(mean_pos_pred, dt_ds)
 
     # Write worker histograms to temp ROOT file
     out_f = ROOT.TFile.Open(temp_output, "RECREATE")
