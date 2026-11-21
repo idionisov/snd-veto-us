@@ -124,7 +124,7 @@ def get_channel_config(det_id: int, sipm: int):
         if bar >= 60:
             return "DS", 10.0, 66.0, 1.0, True, 5
         else:
-            side_sign = -1.0 if sipm == 0 else 1.0
+            side_sign = 1.0 if sipm == 0 else -1.0
             return "DS", -55.0, -5.0, side_sign, False, 5
     else:
         side_sign = 1.0 if sipm < 8 else -1.0
@@ -851,6 +851,7 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
     return {
         "gr_veto": gr_veto,
         "gr_us": gr_us,
+        "gr_ds": gr_ds,
         "gr_all": gr_all,
         "gr_det_mean": gr_det_mean,
         "h_chi2": h_chi2,
@@ -865,7 +866,10 @@ def build_cscint_global_summary_plots(channel_results, ref="DS"):
 
 def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
              save_slice_canvases: bool = False, output_path: str = None, verbose: bool = False,
-             veto_min: float = -42.0, veto_max: float = -12.0, veto_n_segments: int = 3):
+             veto_min: float = -42.0, veto_max: float = -12.0, veto_n_segments: int = 3,
+             veto_ver_min: float = 13.0, veto_ver_max: float = 55.0,
+             ds_hor_min: float = -55.0, ds_hor_max: float = -5.0,
+             ds_ver_min: float = 10.0, ds_ver_max: float = 66.0):
     """
     Fits c_scint for all SiPM channels in root_path.
     If save_canvas=True, stores 2-pad fit canvas into each channel directory.
@@ -876,19 +880,17 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
     mode = "UPDATE" if (save_canvas or save_slices) else "READ"
     is_network = root_path.startswith("/eos") or (target_path and target_path.startswith("/eos"))
 
-    if is_network and mode == "UPDATE":
+    if is_network:
         tmp_fd, work_file = tempfile.mkstemp(suffix=".root", prefix="cscint_fit_")
         os.close(tmp_fd)
-        if shutil.which("xrdcp") and "/eos/" in root_path:
-            server = "root://eosuser.cern.ch/" if "/eos/user/" in root_path else "root://eospublic.cern.ch/"
+        if os.path.exists(root_path):
+            shutil.copyfile(root_path, work_file)
+        elif shutil.which("xrdcp") and "/eos/" in root_path:
+            server = "root://eoshome.cern.ch/" if "/eos/user/" in root_path else "root://eospublic.cern.ch/"
             subpath = root_path if root_path.startswith("/eos/") else f"/eos/{root_path}"
             subprocess.run(["xrdcp", "-f", f"{server}{subpath}", work_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             shutil.copyfile(root_path, work_file)
-    elif mode == "READ" and root_path.startswith("/eos/user/"):
-        work_file = f"root://eosuser.cern.ch/{root_path}"
-    elif mode == "READ" and root_path.startswith("/eos/experiment/"):
-        work_file = f"root://eospublic.cern.ch/{root_path}"
     else:
         work_file = target_path if (output_path and output_path != root_path) else root_path
         if output_path and output_path != root_path and mode == "UPDATE":
@@ -926,11 +928,20 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
 
         subsys_name, fit_min_default, fit_max_default, side_sign, is_vert, n_seg = get_channel_config(detID, sipm)
 
-        # Allow user override for veto bounds if horizontal veto
+        # Allow user overrides for subsystem bounds
         if subsys_name == "Veto" and not is_vert:
             fit_min_ds, fit_max_ds = veto_min, veto_max
             fit_min_sf, fit_max_sf = veto_min, veto_max
             n_seg = veto_n_segments
+        elif subsys_name == "Veto" and is_vert:
+            fit_min_ds, fit_max_ds = veto_ver_min, veto_ver_max
+            fit_min_sf, fit_max_sf = veto_ver_min, veto_ver_max
+        elif subsys_name == "DS" and not is_vert:
+            fit_min_ds, fit_max_ds = ds_hor_min, ds_hor_max
+            fit_min_sf, fit_max_sf = ds_hor_min, ds_hor_max
+        elif subsys_name == "DS" and is_vert:
+            fit_min_ds, fit_max_ds = ds_ver_min, ds_ver_max
+            fit_min_sf, fit_max_sf = ds_ver_min, ds_ver_max
         else:
             fit_min_ds, fit_max_ds = fit_min_default, fit_max_default
             fit_min_sf, fit_max_sf = fit_min_default, fit_max_default
@@ -1049,14 +1060,20 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
 
     if is_network and mode == "UPDATE":
         os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
-        if shutil.which("xrdcp") and "/eos/" in target_path:
-            server = "root://eosuser.cern.ch/" if "/eos/user/" in target_path else "root://eospublic.cern.ch/"
+        if os.path.exists(os.path.dirname(os.path.abspath(target_path))):
+            shutil.copyfile(work_file, target_path)
+            if os.path.exists(work_file):
+                os.remove(work_file)
+        elif shutil.which("xrdcp") and "/eos/" in target_path:
+            server = "root://eoshome.cern.ch/" if "/eos/user/" in target_path else "root://eospublic.cern.ch/"
             subpath = target_path if target_path.startswith("/eos/") else f"/eos/{target_path}"
             subprocess.run(["xrdcp", "-f", work_file, f"{server}{subpath}"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.exists(work_file):
                 os.remove(work_file)
         else:
             shutil.move(work_file, target_path)
+    elif is_network and os.path.exists(work_file):
+        os.remove(work_file)
 
     # Calculate summary statistics
     summary = {}
@@ -1100,7 +1117,8 @@ def fit_file(root_path: str, save_canvas: bool = True, save_slices: bool = True,
 
 def _worker_process_run(task_args):
     """Worker task wrapper for multiprocessing."""
-    fpath, rnum, cat, out_run_json, out_run_root, save_canvas, save_slices, save_slice_canvases, verbose, veto_min, veto_max, veto_n_seg = task_args
+    (fpath, rnum, cat, out_run_json, out_run_root, save_canvas, save_slices, save_slice_canvases, verbose,
+     veto_min, veto_max, veto_n_seg, veto_ver_min, veto_ver_max, ds_hor_min, ds_hor_max, ds_ver_min, ds_ver_max) = task_args
     try:
         res = fit_file(
             fpath,
@@ -1111,7 +1129,13 @@ def _worker_process_run(task_args):
             verbose=verbose,
             veto_min=veto_min,
             veto_max=veto_max,
-            veto_n_segments=veto_n_seg
+            veto_n_segments=veto_n_seg,
+            veto_ver_min=veto_ver_min,
+            veto_ver_max=veto_ver_max,
+            ds_hor_min=ds_hor_min,
+            ds_hor_max=ds_hor_max,
+            ds_ver_min=ds_ver_min,
+            ds_ver_max=ds_ver_max,
         )
         if res is None:
             return None
@@ -1152,9 +1176,21 @@ def main():
     parser.add_argument("--output-root-dir", type=str, default=None,
                         help="Optional output directory for modified ROOT files (default: update in-place)")
     parser.add_argument("--veto-min", type=float, default=-42.0,
-                        help="Lower bound in x_pred [cm] for Veto c_scint fit (default: -42.0)")
+                        help="Lower bound in x_pred [cm] for Horizontal Veto fit (default: -42.0)")
     parser.add_argument("--veto-max", type=float, default=-12.0,
-                        help="Upper bound in x_pred [cm] for Veto c_scint fit (default: -12.0)")
+                        help="Upper bound in x_pred [cm] for Horizontal Veto fit (default: -12.0)")
+    parser.add_argument("--veto-ver-min", type=float, default=13.0,
+                        help="Lower bound in y_pred [cm] for Vertical Veto fit (default: 13.0)")
+    parser.add_argument("--veto-ver-max", type=float, default=55.0,
+                        help="Upper bound in y_pred [cm] for Vertical Veto fit (default: 55.0)")
+    parser.add_argument("--ds-hor-min", type=float, default=-55.0,
+                        help="Lower bound in x_pred [cm] for DS horizontal fit (default: -55.0)")
+    parser.add_argument("--ds-hor-max", type=float, default=-5.0,
+                        help="Upper bound in x_pred [cm] for DS horizontal fit (default: -5.0)")
+    parser.add_argument("--ds-ver-min", type=float, default=10.0,
+                        help="Lower bound in y_pred [cm] for DS vertical fit (default: 10.0)")
+    parser.add_argument("--ds-ver-max", type=float, default=66.0,
+                        help="Upper bound in y_pred [cm] for DS vertical fit (default: 66.0)")
     parser.add_argument("--veto-segments", type=int, default=3,
                         help="Number of sub-segments for Veto systematic error estimation (default: 3)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print progress")
@@ -1175,7 +1211,13 @@ def main():
             verbose=args.verbose,
             veto_min=args.veto_min,
             veto_max=args.veto_max,
-            veto_n_segments=args.veto_segments
+            veto_n_segments=args.veto_segments,
+            veto_ver_min=args.veto_ver_min,
+            veto_ver_max=args.veto_ver_max,
+            ds_hor_min=args.ds_hor_min,
+            ds_hor_max=args.ds_hor_max,
+            ds_ver_min=args.ds_ver_min,
+            ds_ver_max=args.ds_ver_max
         )
         if res is not None:
             os.makedirs(os.path.dirname(os.path.abspath(out_json)), exist_ok=True)
@@ -1217,7 +1259,10 @@ def main():
             tasks.append((
                 fpath, rnum, cat, out_run_json, out_run_root,
                 args.save_canvas, args.save_slices, args.save_slice_canvases, args.verbose,
-                args.veto_min, args.veto_max, args.veto_segments
+                args.veto_min, args.veto_max, args.veto_segments,
+                args.veto_ver_min, args.veto_ver_max,
+                args.ds_hor_min, args.ds_hor_max,
+                args.ds_ver_min, args.ds_ver_max
             ))
 
         print(f"======================================================================")
