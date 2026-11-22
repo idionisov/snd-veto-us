@@ -108,7 +108,12 @@ def main():
     )
     args = parser.parse_args()
 
-    suffix = args.suffix if args.suffix is not None else (f"_max{args.max_partitions}" if args.max_partitions is not None else "")
+    if args.suffix is not None:
+        suffix = args.suffix
+    elif args.max_partitions is not None and args.max_partitions > 0:
+        suffix = f"_max{args.max_partitions}"
+    else:
+        suffix = "_all"
 
     catI_jobs = []
     catII_jobs = []
@@ -138,7 +143,7 @@ def main():
                 partitions = scan_partitions(run_dir)
                 if not partitions:
                     continue
-                if args.max_partitions is not None:
+                if args.max_partitions is not None and args.max_partitions > 0:
                     partitions = partitions[:args.max_partitions]
                 for p in partitions:
                     line = f"{run} {p} {cat}\n"
@@ -172,7 +177,7 @@ def main():
                 partitions = scan_partitions(run_dir)
                 if not partitions:
                     continue
-                if args.max_partitions is not None:
+                if args.max_partitions is not None and args.max_partitions > 0:
                     partitions = partitions[:args.max_partitions]
                 for p in partitions:
                     line = f"{run} {p} catIII\n"
