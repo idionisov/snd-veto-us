@@ -21,31 +21,46 @@ FORCE="${FORCE:-0}"
 
 WORK_DIR="/afs/cern.ch/work/i/idioniso/snd-veto-us"
 
-# 1. Resolve Input File and Target Mode
-IN_FILE=""
-MODE="timewalk" # or "cscint"
+# 1. Resolve Mode & Input File
+MODE="cscint"
 
 if [ -n "${CUSTOM_IN_DIR}" ] && [ -f "${CUSTOM_IN_DIR}/run${RUN}.root" ]; then
     IN_FILE="${CUSTOM_IN_DIR}/run${RUN}.root"
-elif [ -f "/eos/user/i/idioniso/Timing/timewalk/runs/run${RUN}.root" ]; then
-    IN_FILE="/eos/user/i/idioniso/Timing/timewalk/runs/run${RUN}.root"
-    MODE="timewalk"
+    if [[ "${CUSTOM_IN_DIR}" =~ timewalk ]]; then
+        MODE="timewalk"
+    else
+        MODE="cscint"
+    fi
 elif [ -f "/eos/user/i/idioniso/Timing/cscint/runs/run${RUN}.root" ]; then
     IN_FILE="/eos/user/i/idioniso/Timing/cscint/runs/run${RUN}.root"
     MODE="cscint"
+elif [ -f "/eos/user/i/idioniso/Timing/timewalk/runs/run${RUN}.root" ]; then
+    IN_FILE="/eos/user/i/idioniso/Timing/timewalk/runs/run${RUN}.root"
+    MODE="timewalk"
 fi
 
-# Allow explicit override via FIT_MODE or FIT_SCRIPT
-if [ "${FIT_MODE}" == "cscint" ] || [ "${FIT_SCRIPT}" == "fit_cscint.py" ]; then
-    MODE="cscint"
-elif [ "${FIT_MODE}" == "timewalk" ] || [ "${FIT_SCRIPT}" == "fit_timewalk.py" ]; then
+# Allow explicit override via FIT_MODE
+if [ "${FIT_MODE}" == "timewalk" ]; then
     MODE="timewalk"
+elif [ "${FIT_MODE}" == "cscint" ]; then
+    MODE="cscint"
 fi
 
 if [ "${MODE}" == "cscint" ]; then
     PY_SCRIPT="${WORK_DIR}/scripts/fit_cscint.py"
-    OUT_DIR="${CUSTOM_OUT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}"
-    OUT_ROOT_DIR="${CUSTOM_OUT_ROOT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits_root}"
+    # Ensure cscint paths are used even if submit file had leftover timewalk defaults
+    if [ -n "${CUSTOM_OUT_DIR}" ] && [[ ! "${CUSTOM_OUT_DIR}" =~ timewalk ]]; then
+        OUT_DIR="${CUSTOM_OUT_DIR}"
+    else
+        OUT_DIR="/eos/user/i/idioniso/Timing/cscint/fits"
+    fi
+
+    if [ -n "${CUSTOM_OUT_ROOT_DIR}" ] && [[ ! "${CUSTOM_OUT_ROOT_DIR}" =~ timewalk ]]; then
+        OUT_ROOT_DIR="${CUSTOM_OUT_ROOT_DIR}"
+    else
+        OUT_ROOT_DIR="/eos/user/i/idioniso/Timing/cscint/fits_root"
+    fi
+
     TARGET_JSON="${OUT_DIR}/run${RUN}_cscint.json"
     TARGET_ROOT="${OUT_ROOT_DIR}/run${RUN}.root"
 else

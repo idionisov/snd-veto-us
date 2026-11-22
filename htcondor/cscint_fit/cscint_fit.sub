@@ -1,7 +1,7 @@
 # ==============================================================================
-# HTCondor Submit File: Time-Walk & cscint Fitting per Run
+# HTCondor Submit File: Scintillator Propagation Speed (cscint) Fitting per Run
 #
-# Flavour: workday (up to 24 hours; fits typically finish in a few minutes)
+# Flavour: workday (up to 24 hours; fits typically finish in ~2 minutes)
 # One job per run queued from $(args_file)
 # ==============================================================================
 
@@ -12,10 +12,10 @@ args_file               = $(args_file:$(base_dir)/args_catII.txt)
 flavour                 = $(flavour:workday)
 force                   = $(force:0)
 
-in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk/runs)
-out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk/fits)
+in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/cscint/runs)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/cscint/fits)
 cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint/fits)
-out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/timewalk/fits_root)
+out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/cscint/fits_root)
 
 executable              = $(base_dir)/run_fit_worker.sh
 arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir) $(out_root_dir)
