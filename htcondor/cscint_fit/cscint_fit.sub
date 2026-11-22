@@ -1,0 +1,41 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk & cscint Fitting per Run
+#
+# Flavour: workday (up to 24 hours; fits typically finish in a few minutes)
+# One job per run queued from $(args_file)
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint_fit
+initialdir              = $(base_dir)
+
+args_file               = $(args_file:$(base_dir)/args_catII.txt)
+flavour                 = $(flavour:workday)
+force                   = $(force:0)
+
+in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk/runs)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk/fits)
+cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint/fits)
+out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/timewalk/fits_root)
+
+executable              = $(base_dir)/run_fit_worker.sh
+arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir) $(out_root_dir)
+environment             = "FORCE=$(force)"
+
+output                  = $(base_dir)/out/fit_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/fit_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/cscint_fit_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 3GB
+max_retries             = 2
+
+queue run from $(args_file)
