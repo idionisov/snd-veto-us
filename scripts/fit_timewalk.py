@@ -141,8 +141,8 @@ def fit_single_timewalk_hist(
     h2,
     ref: str,
     fixed_ch: str,
-    qdc_min: float = 1.0,
-    min_bin_entries: int = 10,
+    qdc_min: float = 0.0,
+    min_bin_entries: int = 100,
     min_total_entries: int = 200
 ):
     """
@@ -170,7 +170,7 @@ def fit_single_timewalk_hist(
         if x_val < qdc_min:
             continue
         py = h2.ProjectionY(f"py_tw_{ref}_{fixed_ch}_{b}", b, b)
-        bin_entries = py.GetEntries()
+        bin_entries = max(py.Integral(), py.GetEntries())
         if bin_entries < min_bin_entries:
             if started:
                 break
@@ -598,8 +598,8 @@ def fit_file(
     cscint_dir: str = "/eos/user/i/idioniso/Timing/cscint/fits",
     save_canvas: bool = True,
     palette: str = "jet",
-    qdc_min: float = 1.0,
-    min_bin_entries: int = 10,
+    qdc_min: float = 0.0,
+    min_bin_entries: int = 100,
     min_total_entries: int = 200,
     verbose: bool = False
 ):
@@ -694,6 +694,15 @@ def fit_file(
                 if candidate and candidate.InheritsFrom("TH2"):
                     h2 = candidate
                     break
+            if not h2:
+                # Flexible discovery for legacy or alternate key names
+                for k in ch_dir.GetListOfKeys():
+                    kname = k.GetName()
+                    if kname.startswith(f"dtvqdc_{ref}") or kname.startswith(f"dtvqdc-{ref}") or kname.startswith(f"dt{ref}vqdc"):
+                        candidate = ch_dir.Get(kname)
+                        if candidate and candidate.InheritsFrom("TH2"):
+                            h2 = candidate
+                            break
             if not h2:
                 continue
 
@@ -863,8 +872,8 @@ def main():
                         help="Colormap palette for 2D histograms: jet, plasma, rainbow, viridis (default: jet)")
     parser.add_argument("--output-root-dir", type=str, default=None,
                         help="Optional output directory for updated ROOT files (default: update in-place)")
-    parser.add_argument("--qdc-min", type=float, default=1.0, help="Minimum QDC value to fit (default: 1.0)")
-    parser.add_argument("--min-bin-entries", type=int, default=10, help="Minimum entries per QDC slice projection (default: 10)")
+    parser.add_argument("--qdc-min", type=float, default=0.0, help="Minimum QDC value to fit (default: 0.0)")
+    parser.add_argument("--min-bin-entries", type=int, default=100, help="Minimum entries per QDC slice projection (default: 100)")
     parser.add_argument("--min-total-entries", type=int, default=200, help="Minimum total entries in histogram to fit (default: 200)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose progress")
     args = parser.parse_args()
