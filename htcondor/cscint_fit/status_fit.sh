@@ -4,66 +4,78 @@
 # ==============================================================================
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JSON_DIR="/eos/user/i/idioniso/Timing/timewalk/fits"
-ROOT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits_root"
-ARGS_FILE="${DIR}/args_catII.txt"
 
 echo "======================================================================"
 echo " HTCondor Queue Status"
 echo "======================================================================"
-condor_q -nobatch 2>/dev/null | grep -E "fit_run|ID" | head -n 35 || condor_q
+condor_q -nobatch 2>/dev/null | grep -E "fit_run|ID" | head -n 45 || condor_q
 
 echo ""
 echo "======================================================================"
-echo " Category II Fit Outputs Status"
-echo " JSON Target Directory: ${JSON_DIR}"
-echo " ROOT Target Directory: ${ROOT_DIR}"
+echo " Fit Outputs Status (JSON & ROOT files)"
 echo "======================================================================"
 
-TOTAL=0
-JSON_OK=0
-ROOT_OK=0
-BOTH_OK=0
-MISSING=()
+check_group() {
+    local label="$1"
+    local args_file="$2"
+    local total=0
+    local json_ok=0
+    local root_ok=0
+    local both_ok=0
+    local missing=()
 
-while read -r r; do
-    [ -z "$r" ] && continue
-    TOTAL=$((TOTAL + 1))
-    
-    jf="${JSON_DIR}/run${r}_timing_calibration.json"
-    rf="${ROOT_DIR}/run${r}.root"
+    while read -r r; do
+        [ -z "$r" ] && continue
+        total=$((total + 1))
+        
+        # Check in timewalk fits first, then cscint fits
+        local jf="/eos/user/i/idioniso/Timing/timewalk/fits/run${r}_timing_calibration.json"
+        local rf="/eos/user/i/idioniso/Timing/timewalk/fits_root/run${r}.root"
+        if [ ! -f "$jf" ]; then
+            jf="/eos/user/i/idioniso/Timing/cscint/fits/run${r}_cscint.json"
+            rf="/eos/user/i/idioniso/Timing/cscint/fits_root/run${r}.root"
+        fi
 
-    has_j=0
-    has_r=0
+        local has_j=0
+        local has_r=0
 
-    if [ -f "$jf" ] && [ $(stat -c%s "$jf" 2>/dev/null || echo 0) -gt 1000 ]; then
-        has_j=1
-        JSON_OK=$((JSON_OK + 1))
+        if [ -f "$jf" ] && [ $(stat -c%s "$jf" 2>/dev/null || echo 0) -gt 1000 ]; then
+            has_j=1
+            json_ok=$((json_ok + 1))
+        fi
+
+        if [ -f "$rf" ] && [ $(stat -c%s "$rf" 2>/dev/null || echo 0) -gt 1000000 ]; then
+            has_r=1
+            root_ok=$((root_ok + 1))
+        fi
+
+        if [ "$has_j" -eq 1 ] && [ "$has_r" -eq 1 ]; then
+            both_ok=$((both_ok + 1))
+        else
+            missing+=("$r")
+        fi
+    done < "${args_file}"
+
+    local pct="0.0%"
+    if [ "$total" -gt 0 ]; then
+        pct=$(awk "BEGIN {printf \"%.1f%%\", ($both_ok/$total)*100}")
     fi
 
-    if [ -f "$rf" ] && [ $(stat -c%s "$rf" 2>/dev/null || echo 0) -gt 1000000 ]; then
-        has_r=1
-        ROOT_OK=$((ROOT_OK + 1))
+    printf "%-18s | %-10d | %-11d | %-11d | %-10s | %-10s\n" \
+        "${label}" "${total}" "${json_ok}" "${root_ok}" "${both_ok}" "${pct}"
+
+    if [ ${#missing[@]} -gt 0 ] && [ ${#missing[@]} -le 10 ]; then
+        echo "   -> Incomplete: ${missing[*]}"
     fi
+}
 
-    if [ "$has_j" -eq 1 ] && [ "$has_r" -eq 1 ]; then
-        BOTH_OK=$((BOTH_OK + 1))
-    else
-        status_str="JSON: $([ $has_j -eq 1 ] && echo 'OK' || echo 'MISSING'), ROOT: $([ $has_r -eq 1 ] && echo 'OK' || echo 'MISSING')"
-        MISSING+=("Run $r ($status_str)")
-    fi
-done < "${ARGS_FILE}"
+printf "%-18s | %-10s | %-11s | %-11s | %-10s | %-10s\n" \
+    "Category / Year" "Total Runs" "JSONs Ready" "ROOTs Ready" "Both Ready" "Progress"
+echo "----------------------------------------------------------------------------------"
 
-printf "%-15s | %-12s | %-12s | %-12s\n" "Total Cat II" "JSONs Ready" "ROOTs Ready" "Fully Done"
-echo "------------------------------------------------------------"
-printf "%-15d | %-12d | %-12d | %-12d\n" "$TOTAL" "$JSON_OK" "$ROOT_OK" "$BOTH_OK"
-
-if [ ${#MISSING[@]} -gt 0 ]; then
-    echo "------------------------------------------------------------"
-    echo " Incomplete / Missing Runs (${#MISSING[@]}):"
-    printf '  * %s\n' "${MISSING[@]}"
-else
-    echo "------------------------------------------------------------"
-    echo " All ${TOTAL} Category II runs are fully fitted and verified!"
-fi
-echo "======================================================================"
+check_group "Cat II (2022)" "${DIR}/args_catII.txt"
+check_group "Cat III (2023)" "${DIR}/args_catIII_2023.txt"
+check_group "Cat III (2024)" "${DIR}/args_catIII_2024.txt"
+check_group "Cat III (2025)" "${DIR}/args_catIII_2025.txt"
+check_group "Cat III (2026)" "${DIR}/args_catIII_2026.txt"
+echo "=================================================================================="

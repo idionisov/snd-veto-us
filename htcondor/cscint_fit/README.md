@@ -1,34 +1,50 @@
 # HTCondor cscint_fit Workflow
 
-Parallel execution of `scripts/fit_timewalk.py` across Category II runs (1 job per run) with HTCondor flavour `workday`.
+Parallel execution of fitting scripts across Category II and Category III runs (1 job per run) with HTCondor flavour `workday`.
 
 ## Components
-- `cscint_fit.sub`: HTCondor submission file configured for 1 run per job, flavour `workday`, 4GB memory, AlmaLinux 9.
-- `run_fit_worker.sh`: Worker script executing `fit_timewalk.py` in node scratch, saving:
-  - Calibration JSON to `/eos/user/i/idioniso/Timing/timewalk/fits/run<RUN>_timing_calibration.json`
-  - Fit ROOT file with canvases to `/eos/user/i/idioniso/Timing/timewalk/fits_root/run<RUN>.root`
-- `args_catII.txt`: List of all 33 Category II runs.
-- `submit_fit.sh`: Submission CLI wrapper.
-- `status_fit.sh`: Status inspection script checking jobs and EOS files.
+- `cscint_fit.sub`: HTCondor submit file (flavour `workday`, 4GB RAM, 1 job per run).
+- `run_fit_worker.sh`: Executes in node scratch and saves:
+  - JSON calibrations to `/eos/.../fits/`
+  - Updated ROOT files with canvases to `/eos/.../fits_root/`
+- Target lists:
+  - `args_catII.txt`: 33 runs (2022)
+  - `args_catIII_2023.txt`: 10 runs (6079 - 6667)
+  - `args_catIII_2024.txt`: 10 runs (8638 - 9880)
+  - `args_catIII_2025.txt`: 10 runs (11124 - 12217)
+  - `args_catIII_2026.txt`: 10 runs (13085 - 13520)
+  - `args_catIII_all.txt`: All 40 Category III runs
 
 ## Usage
 
-### 1. Submit all 33 Category II runs
+### Submit by Year (Category III)
 ```bash
-./submit_fit.sh
+./submit_catIII_2023.sh
+./submit_catIII_2024.sh
+./submit_catIII_2025.sh
+./submit_catIII_2026.sh
+
+# Or all 40 Cat III runs at once:
+./submit_catIII_all.sh
 ```
 
-### 2. Force re-fit (overwrite existing fits)
+### Submit Category II (33 runs)
 ```bash
-./submit_fit.sh --force
+./submit_catII.sh
 ```
 
-### 3. Submit specific runs
+### Options
+Add `--force` to overwrite existing fits:
 ```bash
-./submit_fit.sh -r 5236,5241,5350,5389
+./submit_catIII_2024.sh --force
 ```
 
-### 4. Monitor
+Submit specific runs:
+```bash
+./submit_fit.sh -r 9094,9269
+```
+
+### Monitor Progress
 ```bash
 ./status_fit.sh
 ```
