@@ -1,0 +1,5 @@
+# DAGMan workflow: Merge Partitions -> Run ROOT files -> Category ROOT files
+JOB RUN_MERGES merge_runs.sub
+JOB CAT_MERGES merge_categories.sub
+
+PARENT RUN_MERGES CHILD CAT_MERGES

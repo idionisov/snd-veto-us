@@ -1,0 +1,26 @@
+# ==============================================================================
+# HTCondor Submit File: Merge Cat II + Cat III (2023 only) cscint histograms
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint
+initialdir              = $(base_dir)
+
+executable              = $(base_dir)/merge_catII_catIII_2023.sh
+
+output                  = $(base_dir)/out/merge_catII_catIII_2023_$(ClusterId).out
+error                   = $(base_dir)/err/merge_catII_catIII_2023_$(ClusterId).err
+log                     = $(base_dir)/log/merge_catII_catIII_2023_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "longlunch"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 4
+request_memory          = 8GB
+request_disk            = 10GB
+
+queue 1

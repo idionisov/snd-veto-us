@@ -1,0 +1,8 @@
+# DAGMan workflow: Merge Partitions -> Run ROOT files -> catIII_2024.root
+JOB RUN_MERGES merge_runs.sub
+VARS RUN_MERGES args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint/args_merge_catIII_2024.txt"
+
+JOB CAT_MERGE merge_category_year.sub
+VARS CAT_MERGE year="2024"
+
+PARENT RUN_MERGES CHILD CAT_MERGE
