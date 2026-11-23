@@ -17,6 +17,7 @@ SAVE_CANVAS=1
 DRY_RUN=0
 CATEGORY="all"
 SPECIFIC_RUNS=""
+EXCLUDE_2024=0
 
 usage() {
     cat <<EOF
@@ -25,6 +26,7 @@ Usage: $0 [options]
 Options:
   -c, --category CAT      Filter runs by category: catI, catII, catIII, or all (default: all)
   -r, --run RUN(s)        Specific run number, or comma-separated list (e.g. 5119 or 5119,5120)
+  --exclude-2024          Exclude all 2024 runs (runs 8000-9999)
   -f, --force             Force re-fitting even if output JSON already exists
   --flavour FLAVOUR       HTCondor JobFlavour (default: workday)
   --no-canvas             Do not store fit canvases in ROOT file (faster execution)
@@ -42,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -c|--category) CATEGORY="$2"; shift 2 ;;
         -r|--run) SPECIFIC_RUNS="$2"; shift 2 ;;
+        --exclude-2024|--no-2024) EXCLUDE_2024=1; shift ;;
         -f|--force) FORCE=1; shift ;;
         --flavour) FLAVOUR="$2"; shift 2 ;;
         --no-canvas) SAVE_CANVAS=0; shift ;;
@@ -87,6 +90,10 @@ else
         r=$(basename "$f" | sed -E 's/run([0-9]+)\.root/\1/')
         if [[ ! "$r" =~ ^[0-9]+$ ]]; then continue; fi
         
+        if [ "${EXCLUDE_2024}" -eq 1 ] && [ "$r" -ge 8000 ] && [ "$r" -lt 10000 ]; then
+            continue
+        fi
+
         rcat=$(get_cat "$r")
         if [ "${CATEGORY}" == "all" ] || [ "${CATEGORY,,}" == "${rcat,,}" ]; then
             echo "$r" >> "${ARGS_FILE}"
