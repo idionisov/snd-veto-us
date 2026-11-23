@@ -18,12 +18,12 @@ getenv                  = False
 notification            = Never
 requirements            = (OpSysAndVer =?= "AlmaLinux9")
 
-+JobFlavour             = "espresso"
++JobFlavour             = "workday"
 +AccountingGroup        = "group_u_SNDLHC.users"
 MY.JobRequiresAFS       = True
 
 request_cpus            = 4
-request_memory          = 4GB
-request_disk            = 5GB
+request_memory          = 8GB
+request_disk            = 15GB
 
 queue 1

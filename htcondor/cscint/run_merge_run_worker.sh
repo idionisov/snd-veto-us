@@ -3,7 +3,7 @@ set -eo pipefail
 
 RUN="$1"
 CAT="$2"
-FORCE="${FORCE:-0}"
+FORCE="${FORCE:-1}"
 
 if [ -z "${RUN}" ] || [ -z "${CAT}" ]; then
     echo "Usage: $0 <run> <cat>"
