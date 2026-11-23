@@ -1,0 +1,40 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk Extraction per Partition (Iteration 2 with cscint_tw)
+#
+# Process per job: One raw partition file (sndsw_raw-XXXX.root)
+# Single-thread execution over all entries in the partition
+# Flavour: workday
+# Output: /eos/user/i/idioniso/Timing/timewalk_tw_parts/<category>/run<RUN>/part_<PARTITION>.root
+# Constants: /eos/user/i/idioniso/Timing/cscint_tw/fits
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk_tw
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:workday)
+args_file               = $(args_file:$(base_dir)/args_partitions_all_max50.txt)
+out_base                = $(out_base:/eos/user/i/idioniso/Timing/timewalk_tw_parts)
+cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint_tw/fits)
+
+executable              = $(base_dir)/run_timewalk_worker.sh
+arguments               = $(run) $(partition) $(category) $(out_base) $(cscint_dir)
+environment             = "FORCE=$(force:0)"
+
+output                  = $(base_dir)/out/tw_run$(run)_part$(partition)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/tw_run$(run)_part$(partition)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/timewalk_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 2GB
+max_retries             = 2
+
+queue run, partition, category from $(args_file)
