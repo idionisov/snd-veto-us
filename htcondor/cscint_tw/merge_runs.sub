@@ -1,0 +1,37 @@
+# ==============================================================================
+# HTCondor Submit File: Merge Time-Walk Corrected c_scint Partitions per Run
+#
+# Process per job: One run (merges all its part_*.root into run<RUN>.root)
+# Flavour: workday
+# Multi-threaded: request_cpus = 4 for hadd -j 4
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint_tw
+initialdir              = $(base_dir)
+
+args_file               = $(args_file:$(base_dir)/args_merge_runs_catII.txt)
+flavour                 = $(flavour:workday)
+force                   = $(force:1)
+
+executable              = $(base_dir)/run_merge_run_worker.sh
+arguments               = $(run) $(category)
+environment             = "FORCE=$(force)"
+
+output                  = $(base_dir)/out/merge_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/merge_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/merge_runs_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 4
+request_memory          = 8GB
+request_disk            = 10GB
+max_retries             = 2
+
+queue run, category from $(args_file)
