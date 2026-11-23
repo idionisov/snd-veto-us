@@ -10,7 +10,8 @@ cd "${DIR}"
 IN_DIR="/eos/user/i/idioniso/Timing/timewalk/runs"
 OUT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits"
 CSCINT_DIR="/eos/user/i/idioniso/Timing/cscint/fits"
-FLAVOUR="microcentury"
+OUT_ROOT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits_root"
+FLAVOUR="workday"
 FORCE=0
 SAVE_CANVAS=1
 DRY_RUN=0
@@ -25,11 +26,12 @@ Options:
   -c, --category CAT      Filter runs by category: catI, catII, catIII, or all (default: all)
   -r, --run RUN(s)        Specific run number, or comma-separated list (e.g. 5119 or 5119,5120)
   -f, --force             Force re-fitting even if output JSON already exists
-  --flavour FLAVOUR       HTCondor JobFlavour (default: microcentury)
+  --flavour FLAVOUR       HTCondor JobFlavour (default: workday)
   --no-canvas             Do not store fit canvases in ROOT file (faster execution)
   --dry-run               Create args file and display candidate jobs without submitting
   --in-dir DIR            Input directory with run ROOT files (default: ${IN_DIR})
   --out-dir DIR           Output directory for fit JSONs (default: ${OUT_DIR})
+  --out-root-dir DIR      Output directory for updated ROOT files (default: ${OUT_ROOT_DIR})
   --cscint-dir DIR        Directory for c_scint constants (default: ${CSCINT_DIR})
   -h, --help              Show this help message
 EOF
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run) DRY_RUN=1; shift ;;
         --in-dir) IN_DIR="$2"; shift 2 ;;
         --out-dir) OUT_DIR="$2"; shift 2 ;;
+        --out-root-dir) OUT_ROOT_DIR="$2"; shift 2 ;;
         --cscint-dir) CSCINT_DIR="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "[ERROR] Unknown option: $1" >&2; exit 1 ;;
@@ -132,6 +135,7 @@ condor_submit fit_timewalk.sub \
     args_file="${ARGS_FILE}" \
     in_dir="${IN_DIR}" \
     out_dir="${OUT_DIR}" \
+    out_root_dir="${OUT_ROOT_DIR}" \
     cscint_dir="${CSCINT_DIR}" \
     flavour="${FLAVOUR}" \
     force="${FORCE}" \

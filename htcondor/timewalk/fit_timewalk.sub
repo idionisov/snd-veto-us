@@ -11,14 +11,15 @@
 base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk
 initialdir              = $(base_dir)
 
-flavour                 = $(flavour:microcentury)
+flavour                 = $(flavour:workday)
 args_file               = $(args_file:$(base_dir)/args_fits.txt)
 in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk/runs)
 out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk/fits)
 cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint/fits)
+out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/timewalk/fits_root)
 
 executable              = $(base_dir)/run_fit_worker.sh
-arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir)
+arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir) $(out_root_dir)
 environment             = "FORCE=$(force:0) SAVE_CANVAS=$(save_canvas:1)"
 
 output                  = $(base_dir)/out/fit_tw_run$(run)_$(ClusterId)_$(ProcId).out

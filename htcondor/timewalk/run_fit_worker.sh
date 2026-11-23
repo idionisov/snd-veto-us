@@ -15,6 +15,7 @@ RUN="${1:-5119}"
 IN_DIR="${2:-/eos/user/i/idioniso/Timing/timewalk/runs}"
 OUT_DIR="${3:-/eos/user/i/idioniso/Timing/timewalk/fits}"
 CSCINT_DIR="${4:-/eos/user/i/idioniso/Timing/cscint/fits}"
+OUT_ROOT_DIR="${5:-/eos/user/i/idioniso/Timing/timewalk/fits_root}"
 SAVE_CANVAS="${SAVE_CANVAS:-1}"
 FORCE="${FORCE:-0}"
 
@@ -99,12 +100,19 @@ if [ -d "${CSCINT_DIR}" ]; then
     CSCINT_OPT="--cscint-dir ${CSCINT_DIR}"
 fi
 
+ROOT_DIR_OPT=""
+if [ -n "${OUT_ROOT_DIR}" ]; then
+    mkdir -p "${SCRATCH_DIR}/fits_root"
+    ROOT_DIR_OPT="--output-root-dir ${SCRATCH_DIR}/fits_root"
+fi
+
 echo " ~ Running fit_timewalk.py on local copy..."
 python3 -X faulthandler "${PY_SCRIPT}" \
     -i "${LOCAL_IN}" \
     -o "${LOCAL_OUT_JSON}" \
     ${CSCINT_OPT} \
-    ${CANVAS_FLAG}
+    ${CANVAS_FLAG} \
+    ${ROOT_DIR_OPT}
 
 # 5. Verify output
 if [ ! -f "${LOCAL_OUT_JSON}" ]; then
@@ -125,9 +133,20 @@ cp -f "${LOCAL_OUT_JSON}" "${TARGET_JSON}.tmp"
 mv -f "${TARGET_JSON}.tmp" "${TARGET_JSON}"
 
 if [ "${SAVE_CANVAS}" == "1" ]; then
-    echo " ~ Updating ROOT file with fit canvases on EOS..."
-    cp -f "${LOCAL_IN}" "${INPUT_FILE}.tmp"
-    mv -f "${INPUT_FILE}.tmp" "${INPUT_FILE}"
+    if [ -n "${OUT_ROOT_DIR}" ]; then
+        mkdir -p "${OUT_ROOT_DIR}"
+        LOCAL_ROOT="${SCRATCH_DIR}/fits_root/$(basename "${INPUT_FILE}")"
+        TARGET_ROOT="${OUT_ROOT_DIR}/$(basename "${INPUT_FILE}")"
+        if [ -f "${LOCAL_ROOT}" ]; then
+            echo " ~ Transferring updated ROOT file with canvases to ${TARGET_ROOT}..."
+            cp -f "${LOCAL_ROOT}" "${TARGET_ROOT}.tmp"
+            mv -f "${TARGET_ROOT}.tmp" "${TARGET_ROOT}"
+        fi
+    else
+        echo " ~ Updating ROOT file with fit canvases on EOS..."
+        cp -f "${LOCAL_IN}" "${INPUT_FILE}.tmp"
+        mv -f "${INPUT_FILE}.tmp" "${INPUT_FILE}"
+    fi
 fi
 
 echo "======================================================================"
