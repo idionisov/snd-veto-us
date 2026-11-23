@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
 TARGET="catII"
-FLAVOUR="espresso"
+FLAVOUR="workday"
 FORCE=1
 DRY_RUN=0
 SPECIFIC_RUN=""
@@ -35,7 +35,7 @@ Options:
   -r, --run RUN           Submit a single specific run number
   -f, --force             Force overwrite of existing run files (default: 1)
   --no-force              Skip runs if output file already exists
-  --flavour FLAVOUR       HTCondor flavour (default: espresso)
+  --flavour FLAVOUR       HTCondor flavour (default: workday)
   --dry-run               Display jobs without submitting
   -h, --help              Show this help
 EOF

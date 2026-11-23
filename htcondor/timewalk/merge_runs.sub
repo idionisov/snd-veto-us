@@ -2,7 +2,7 @@
 # HTCondor Submit File: Merge Time-Walk Partitions per Run
 #
 # Process per job: One run (merges all its part_*.root into run<RUN>.root)
-# Flavour: espresso (~1-2 min per job) or microcentury
+# Flavour: workday
 # Multi-threaded: request_cpus = 4 for hadd -j 4
 # ==============================================================================
 
@@ -10,7 +10,7 @@ base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/time
 initialdir              = $(base_dir)
 
 args_file               = $(args_file:$(base_dir)/args_merge_runs_catII.txt)
-flavour                 = $(flavour:espresso)
+flavour                 = $(flavour:workday)
 force                   = $(force:1)
 
 executable              = $(base_dir)/run_merge_run_worker.sh
