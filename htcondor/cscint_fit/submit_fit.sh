@@ -11,14 +11,15 @@ FLAVOUR="workday"
 FORCE=0
 DRY_RUN=0
 SPECIFIC_RUNS=""
-TARGET="catII"
+TARGET="missing"
 
 usage() {
     cat <<EOF
 Usage: $0 [TARGET] [options]
 
 Targets:
-  catII                   Submit all 33 Cat II runs (default)
+  missing                 Submit only missing/incomplete runs (default: 36 runs)
+  catII                   Submit all 33 Cat II runs
   2023 | catIII_2023      Submit 2023 Cat III runs (6079 - 6667)
   2024 | catIII_2024      Submit 2024 Cat III runs (8638 - 9880)
   2025 | catIII_2025      Submit 2025 Cat III runs (11124 - 12217)
@@ -38,7 +39,7 @@ EOF
 }
 
 # Parse positional target if given
-if [[ $# -gt 0 ]] && [[ "$1" =~ ^(catII|catIII|2023|2024|2025|2026|catIII_2023|catIII_2024|catIII_2025|catIII_2026|all)$ ]]; then
+if [[ $# -gt 0 ]] && [[ "$1" =~ ^(missing|catII|catIII|2023|2024|2025|2026|catIII_2023|catIII_2024|catIII_2025|catIII_2026|all)$ ]]; then
     TARGET="$1"
     shift
 fi
@@ -59,6 +60,9 @@ mkdir -p out err log
 
 # Select args file based on target
 case "${TARGET}" in
+    missing)
+        ARGS_FILE="${DIR}/args_missing.txt"
+        ;;
     catII)
         ARGS_FILE="${DIR}/args_catII.txt"
         ;;
@@ -110,6 +114,8 @@ echo " Flavour:      ${FLAVOUR}"
 echo " Force:        ${FORCE}"
 echo " Total Runs:   ${N_RUNS}"
 echo " Args File:    ${SUBMIT_ARGS}"
+echo " Destination:  JSON -> /eos/user/i/idioniso/Timing/cscint/fits"
+echo "               ROOT -> /eos/user/i/idioniso/Timing/cscint/fits_root"
 echo " Time:         $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
 

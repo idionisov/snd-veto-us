@@ -6,13 +6,15 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "======================================================================"
-echo " HTCondor Queue Status"
+echo " HTCondor Queue Status (cscint_fit)"
 echo "======================================================================"
 condor_q -nobatch 2>/dev/null | grep -E "fit_run|ID" | head -n 45 || condor_q
 
 echo ""
 echo "======================================================================"
-echo " Fit Outputs Status (JSON & ROOT files)"
+echo " cscint Fit Outputs Status (JSON & ROOT files)"
+echo " Destination JSON: /eos/user/i/idioniso/Timing/cscint/fits"
+echo " Destination ROOT: /eos/user/i/idioniso/Timing/cscint/fits_root"
 echo "======================================================================"
 
 check_group() {
@@ -24,17 +26,14 @@ check_group() {
     local both_ok=0
     local missing=()
 
+    [ ! -f "${args_file}" ] && return
+
     while read -r r; do
         [ -z "$r" ] && continue
         total=$((total + 1))
         
-        # Check in timewalk fits first, then cscint fits
-        local jf="/eos/user/i/idioniso/Timing/timewalk/fits/run${r}_timing_calibration.json"
-        local rf="/eos/user/i/idioniso/Timing/timewalk/fits_root/run${r}.root"
-        if [ ! -f "$jf" ]; then
-            jf="/eos/user/i/idioniso/Timing/cscint/fits/run${r}_cscint.json"
-            rf="/eos/user/i/idioniso/Timing/cscint/fits_root/run${r}.root"
-        fi
+        local jf="/eos/user/i/idioniso/Timing/cscint/fits/run${r}_cscint.json"
+        local rf="/eos/user/i/idioniso/Timing/cscint/fits_root/run${r}.root"
 
         local has_j=0
         local has_r=0
@@ -64,8 +63,8 @@ check_group() {
     printf "%-18s | %-10d | %-11d | %-11d | %-10s | %-10s\n" \
         "${label}" "${total}" "${json_ok}" "${root_ok}" "${both_ok}" "${pct}"
 
-    if [ ${#missing[@]} -gt 0 ] && [ ${#missing[@]} -le 10 ]; then
-        echo "   -> Incomplete: ${missing[*]}"
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "   -> Incomplete (${#missing[@]} runs): ${missing[*]}"
     fi
 }
 
