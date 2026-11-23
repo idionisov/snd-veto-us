@@ -25,6 +25,10 @@ check_merge_group() {
     local missing=()
     local total_bytes=0
 
+    if [ ! -f "${args_file}" ]; then
+        return
+    fi
+
     while read -r r cat; do
         [ -z "$r" ] && continue
         total=$((total + 1))
@@ -66,6 +70,7 @@ echo "----------------------------------------------------------------------"
 
 check_merge_group "Cat II (2022)" "${DIR}/args_merge_runs_catII.txt"
 check_merge_group "Cat III (2023)" "${DIR}/args_merge_runs_catIII_2023.txt"
+check_merge_group "Cat III (2024)" "${DIR}/args_merge_runs_catIII_2024.txt"
 check_merge_group "Cat III (2025)" "${DIR}/args_merge_runs_catIII_2025.txt"
 check_merge_group "Cat III (2026)" "${DIR}/args_merge_runs_catIII_2026.txt"
 echo "======================================================================"
