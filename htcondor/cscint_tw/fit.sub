@@ -1,0 +1,36 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk Corrected c_scint Fitting per Run
+#
+# Flavour: workday (fits take ~1-2 minutes per run)
+# One job per run queued from $(args_file)
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/cscint_tw
+initialdir              = $(base_dir)
+
+args_file               = $(args_file:$(base_dir)/args_fit_all.txt)
+flavour                 = $(flavour:workday)
+force                   = $(force:0)
+
+executable              = $(base_dir)/run_fit_worker.sh
+arguments               = $(run)
+environment             = "FORCE=$(force)"
+
+output                  = $(base_dir)/out/fit_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/fit_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/cscint_tw_fit_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 3GB
+max_retries             = 2
+
+queue run from $(args_file)
