@@ -1,0 +1,43 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk Parameter Fitting per Run (Iteration 2)
+#
+# Process per job: One merged run ROOT file (run<RUN>.root)
+# Input:  /eos/user/i/idioniso/Timing/timewalk_tw/runs/run<RUN>.root
+# Output: /eos/user/i/idioniso/Timing/timewalk_tw/fits/run<RUN>_timing_calibration.json
+# Output ROOT: /eos/user/i/idioniso/Timing/timewalk_tw/fits_root/run<RUN>.root
+# Constants: /eos/user/i/idioniso/Timing/cscint_tw/fits
+# Flavour: workday (fits take ~1-2 min per run)
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk_tw
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:workday)
+args_file               = $(args_file:$(base_dir)/args_fit_all.txt)
+in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk_tw/runs)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk_tw/fits)
+cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint_tw/fits)
+out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/timewalk_tw/fits_root)
+
+executable              = $(base_dir)/run_fit_worker.sh
+arguments               = $(run) $(in_dir) $(out_dir) $(cscint_dir) $(out_root_dir)
+environment             = "FORCE=$(force:0) SAVE_CANVAS=$(save_canvas:1)"
+
+output                  = $(base_dir)/out/fit_tw_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/fit_tw_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/fit_tw_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 2GB
+max_retries             = 2
+
+queue run from $(args_file)
