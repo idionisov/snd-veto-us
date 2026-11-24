@@ -35,7 +35,7 @@ EOF
 }
 
 # Parse positional target if given
-if [[ $# -gt 0 ]] && [[ "$1" =~ ^(all|missing|catII|catIII_2023|catIII_2025|2023|2025)$ ]]; then
+if [[ $# -gt 0 ]] && [[ "$1" =~ ^(all|missing|catII|catIII_2023|catIII_2024|catIII_2025|catIII_2026|2023|2024|2025|2026)$ ]]; then
     TARGET="$1"
     shift
 fi
@@ -81,8 +81,14 @@ case "${TARGET}" in
     2023|catIII_2023)
         ARGS_FILE="${DIR}/args_fit_catIII_2023.txt"
         ;;
+    2024|catIII_2024)
+        ARGS_FILE="${DIR}/args_fit_catIII_2024.txt"
+        ;;
     2025|catIII_2025)
         ARGS_FILE="${DIR}/args_fit_catIII_2025.txt"
+        ;;
+    2026|catIII_2026)
+        ARGS_FILE="${DIR}/args_fit_catIII_2026.txt"
         ;;
     *)
         echo "[ERROR] Unknown target: ${TARGET}" >&2
