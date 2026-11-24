@@ -22,7 +22,9 @@ Targets:
   missing                 Submit only runs whose merged ROOT exists but JSON/ROOT fit is missing
   catII                   Submit Cat II (2022) runs (33 runs)
   2023 | catIII_2023      Submit Cat III 2023 runs (10 runs)
+  2024 | catIII_2024      Submit Cat III 2024 runs (10 runs)
   2025 | catIII_2025      Submit Cat III 2025 runs (10 runs)
+  2026 | catIII_2026      Submit Cat III 2026 runs (3 runs)
 
 Options:
   -r, --run RUN(s)        Specific run number(s), comma-separated (e.g. 5119 or 5119,5120)
@@ -35,7 +37,7 @@ EOF
 }
 
 # Parse positional target if given
-if [[ $# -gt 0 ]] && [[ "$1" =~ ^(all|missing|catII|catIII_2023|catIII_2025|2023|2025)$ ]]; then
+if [[ $# -gt 0 ]] && [[ "$1" =~ ^(all|missing|catII|catIII_2023|catIII_2024|catIII_2025|catIII_2026|2023|2024|2025|2026)$ ]]; then
     TARGET="$1"
     shift
 fi
