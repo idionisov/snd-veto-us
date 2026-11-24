@@ -18,15 +18,26 @@ DRY_RUN=0
 CATEGORY="all"
 SPECIFIC_RUNS=""
 EXCLUDE_2024=0
+YEAR=""
+ONLY_MISSING=0
 
 usage() {
     cat <<EOF
-Usage: $0 [options]
+Usage: $0 [TARGET] [options]
+
+Targets:
+  2024 | catIII_2024      Fit all 10 runs from 2024 (8638 - 9880)
+  missing                 Fit only runs whose merged ROOT exists but fit JSON is missing
+  catII                   Fit Cat II (2022) runs
+  catIII                  Fit Cat III runs across all years
+  all                     Fit all candidate runs (default)
 
 Options:
-  -c, --category CAT      Filter runs by category: catI, catII, catIII, or all (default: all)
-  -r, --run RUN(s)        Specific run number, or comma-separated list (e.g. 5119 or 5119,5120)
-  --exclude-2024          Exclude all 2024 runs (runs 8000-9999)
+  -c, --category CAT      Filter runs by category: catI, catII, catIII, or all
+  -y, --year YEAR         Filter runs by year (e.g. 2022, 2023, 2024, 2025, 2026)
+  -r, --run RUN(s)        Specific run number, or comma-separated list (e.g. 8638 or 8638,8724)
+  -m, --missing           Submit only missing fits
+  --exclude-2024          Exclude 2024 runs (runs 8000-9999)
   -f, --force             Force re-fitting even if output JSON already exists
   --flavour FLAVOUR       HTCondor JobFlavour (default: workday)
   --no-canvas             Do not store fit canvases in ROOT file (faster execution)
@@ -40,9 +51,28 @@ EOF
     exit 0
 }
 
+# Parse positional argument if given
+if [[ $# -gt 0 ]] && [[ "$1" =~ ^(missing|2022|2023|2024|2025|2026|catI|catII|catIII|catIII_2023|catIII_2024|catIII_2025|catIII_2026|all)$ ]]; then
+    case "$1" in
+        missing) ONLY_MISSING=1 ;;
+        2022) YEAR="2022" ;;
+        2023|catIII_2023) YEAR="2023" ;;
+        2024|catIII_2024) YEAR="2024" ;;
+        2025|catIII_2025) YEAR="2025" ;;
+        2026|catIII_2026) YEAR="2026" ;;
+        catI) CATEGORY="catI" ;;
+        catII) CATEGORY="catII" ;;
+        catIII) CATEGORY="catIII" ;;
+        all) CATEGORY="all" ;;
+    esac
+    shift
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -c|--category) CATEGORY="$2"; shift 2 ;;
+        -y|--year) YEAR="$2"; shift 2 ;;
+        -m|--missing) ONLY_MISSING=1; shift ;;
         -r|--run) SPECIFIC_RUNS="$2"; shift 2 ;;
         --exclude-2024|--no-2024) EXCLUDE_2024=1; shift ;;
         -f|--force) FORCE=1; shift ;;
@@ -58,7 +88,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mkdir -p out err log "${OUT_DIR}"
+mkdir -p out err log "${OUT_DIR}" "${OUT_ROOT_DIR}"
 
 # Helper function to categorize run number
 get_cat() {
@@ -69,6 +99,23 @@ get_cat() {
         echo "catII"
     else
         echo "catIII"
+    fi
+}
+
+get_year() {
+    local r="$1"
+    if [ "$r" -ge 5000 ] && [ "$r" -lt 6000 ]; then
+        echo "2022"
+    elif [ "$r" -ge 6000 ] && [ "$r" -lt 7000 ]; then
+        echo "2023"
+    elif [ "$r" -ge 8000 ] && [ "$r" -lt 10000 ]; then
+        echo "2024"
+    elif [ "$r" -ge 10000 ] && [ "$r" -lt 13000 ]; then
+        echo "2025"
+    elif [ "$r" -ge 13000 ] && [ "$r" -lt 14000 ]; then
+        echo "2026"
+    else
+        echo "other"
     fi
 }
 
@@ -94,17 +141,34 @@ else
             continue
         fi
 
-        rcat=$(get_cat "$r")
-        if [ "${CATEGORY}" == "all" ] || [ "${CATEGORY,,}" == "${rcat,,}" ]; then
-            echo "$r" >> "${ARGS_FILE}"
+        if [ -n "${YEAR}" ]; then
+            ryear=$(get_year "$r")
+            if [ "${ryear}" != "${YEAR}" ]; then
+                continue
+            fi
         fi
+
+        rcat=$(get_cat "$r")
+        if [ "${CATEGORY}" != "all" ] && [ "${CATEGORY,,}" != "${rcat,,}" ]; then
+            continue
+        fi
+
+        if [ "${ONLY_MISSING}" -eq 1 ]; then
+            jf="${OUT_DIR}/run${r}_timing_calibration.json"
+            rf="${OUT_ROOT_DIR}/run${r}.root"
+            if [ -f "$jf" ] && [ -f "$rf" ] && [ $(stat -c%s "$jf" 2>/dev/null || echo 0) -gt 1000 ]; then
+                continue
+            fi
+        fi
+
+        echo "$r" >> "${ARGS_FILE}"
     done
 fi
 
-TOTAL_CANDIDATES=$(wc -l < "${ARGS_FILE}")
+TOTAL_CANDIDATES=$(wc -l < "${ARGS_FILE}" 2>/dev/null || echo 0)
 
 if [ "${TOTAL_CANDIDATES}" -eq 0 ]; then
-    echo "[WARNING] No matching runs found in ${IN_DIR} for category '${CATEGORY}'."
+    echo "[INFO] No runs to submit with current filters. Everything up to date!"
     exit 0
 fi
 
@@ -118,22 +182,24 @@ done < "${ARGS_FILE}"
 
 echo "======================================================================"
 echo " SND@LHC Time-Walk Fitting HTCondor Submission"
-echo " Input Directory:  ${IN_DIR}"
-echo " Output Directory: ${OUT_DIR}"
-echo " Category Filter:  ${CATEGORY}"
-echo " Total Candidate Runs: ${TOTAL_CANDIDATES}"
-echo " Already Fitted:       ${ALREADY_FITTED}"
+echo " Input Directory:      ${IN_DIR}"
+echo " Output Directory:     ${OUT_DIR}"
+echo " Destination ROOT:     ${OUT_ROOT_DIR}"
+echo " c_scint Constants:    ${CSCINT_DIR}"
+echo " Category Filter:      ${CATEGORY}"
+echo " Year Filter:          ${YEAR:-all}"
+echo " Only Missing:         ${ONLY_MISSING}"
+echo " Total Runs to Queue:  ${TOTAL_CANDIDATES}"
+echo " Already Fitted (EOS): ${ALREADY_FITTED}"
 echo " Force Re-fit:         ${FORCE}"
 echo " Flavour:              ${FLAVOUR}"
 echo " Args File:            ${ARGS_FILE}"
+echo " Time:                 $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
 
 if [ "${DRY_RUN}" -eq 1 ]; then
     echo "[INFO] Dry run requested. Runs queued in ${ARGS_FILE}:"
-    head -n 15 "${ARGS_FILE}"
-    if [ "${TOTAL_CANDIDATES}" -gt 15 ]; then
-        echo " ... ($((TOTAL_CANDIDATES - 15)) more runs)"
-    fi
+    cat "${ARGS_FILE}"
     echo "[INFO] Submit skipped."
     exit 0
 fi
@@ -147,3 +213,8 @@ condor_submit fit_timewalk.sub \
     flavour="${FLAVOUR}" \
     force="${FORCE}" \
     save_canvas="${SAVE_CANVAS}"
+
+echo "======================================================================"
+echo "[SUCCESS] Submitted ${TOTAL_CANDIDATES} fit jobs to HTCondor."
+echo " Monitor with: condor_q or ./status_fits.sh"
+echo "======================================================================"
