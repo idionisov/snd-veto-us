@@ -14,7 +14,7 @@
 #   ./submit_all_max50.sh 2024       # Submits Category III 2024 only (500 jobs)
 #   ./submit_all_max50.sh 2025       # Submits Category III 2025 only (500 jobs)
 #   ./submit_all_max50.sh 2026       # Submits Category III 2026 only (500 jobs)
-#   ./submit_all_max50.sh catIII     # Submits Category III (2023, 2025, 2026)
+#   ./submit_all_max50.sh catIII     # Submits Category III (2023-2026)
 #   ./submit_all_max50.sh all        # Submits all categories
 # ==============================================================================
 set -e
@@ -114,7 +114,7 @@ case "${TARGET}" in
         ;;
 
     catIII|catiii|CATIII|III)
-        for Y in 2023 2025 2026; do
+        for Y in 2023 2024 2025 2026; do
             ARGS_Y="${DIR}/args_partitions_catIII_${Y}_max50.txt"
             echo "[INFO] Submitting Category III Year ${Y} ($(wc -l < "${ARGS_Y}") jobs)..."
             condor_submit cscint_tw.sub \
@@ -146,8 +146,8 @@ case "${TARGET}" in
             out_base="${OUT_BASE}" \
             "$@"
 
-        echo "[3/3] Submitting Category III (2023, 2025, 2026)..."
-        for Y in 2023 2025 2026; do
+        echo "[3/3] Submitting Category III (2023-2026)..."
+        for Y in 2023 2024 2025 2026; do
             ARGS_Y="${DIR}/args_partitions_catIII_${Y}_max50.txt"
             condor_submit cscint_tw.sub \
                 args_file="${ARGS_Y}" \

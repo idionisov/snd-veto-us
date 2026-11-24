@@ -9,46 +9,52 @@ OUT_PARTS="/eos/user/i/idioniso/Timing/cscint_tw_parts"
 echo "======================================================================"
 echo " HTCondor Queue Status (cscint_tw)"
 echo "======================================================================"
-condor_q -nobatch 2>/dev/null | grep -E "cscint_tw_run|ID" | head -n 20 || condor_q
+condor_q -nobatch 2>/dev/null | grep -E "cscint_tw_run|run_cscint_tw|ID" | head -n 30 || condor_q
 echo ""
 
-ARGS_ALL="${DIR}/args_partitions_all_max50.txt"
-ARGS_CATI="${DIR}/args_partitions_catI_max50.txt"
-ARGS_CATII="${DIR}/args_partitions_catII_max50.txt"
-ARGS_CATIII="${DIR}/args_partitions_catIII_max50.txt"
-
-TOTAL_ALL=$(wc -l < "${ARGS_ALL}" 2>/dev/null || echo 0)
-TOTAL_CATI=$(wc -l < "${ARGS_CATI}" 2>/dev/null || echo 0)
-TOTAL_CATII=$(wc -l < "${ARGS_CATII}" 2>/dev/null || echo 0)
-TOTAL_CATIII=$(wc -l < "${ARGS_CATIII}" 2>/dev/null || echo 0)
-
-DONE_CATI=0
-DONE_CATII=0
-DONE_CATIII=0
-if [ -d "${OUT_PARTS}/catI" ]; then
-    DONE_CATI=$(find "${OUT_PARTS}/catI" -maxdepth 2 -name "part_*.root" 2>/dev/null | wc -l)
-fi
-if [ -d "${OUT_PARTS}/catII" ]; then
-    DONE_CATII=$(find "${OUT_PARTS}/catII" -maxdepth 2 -name "part_*.root" 2>/dev/null | wc -l)
-fi
-if [ -d "${OUT_PARTS}/catIII" ]; then
-    DONE_CATIII=$(find "${OUT_PARTS}/catIII" -maxdepth 2 -name "part_*.root" 2>/dev/null | wc -l)
-fi
-DONE_ALL=$((DONE_CATI + DONE_CATII + DONE_CATIII))
-
 echo "======================================================================"
-echo " Output Partition Progress on EOS (${OUT_PARTS}):"
-if [ -n "$1" ]; then
-    RUN="$1"
-    RUN_PARTS=$(find "${OUT_PARTS}" -path "*/run${RUN}/part_*.root" 2>/dev/null | wc -l)
-    TOTAL_RUN=0
-    if grep -q "^${RUN} " "${ARGS_ALL}" 2>/dev/null; then
-        TOTAL_RUN=$(grep -c "^${RUN} " "${ARGS_ALL}")
+echo " Time-Walk Corrected c_scint Partition Extraction Progress"
+echo " Destination: ${OUT_PARTS}"
+echo "======================================================================"
+
+check_progress() {
+    local label="$1"
+    local args_file="$2"
+    local total=0
+    local done=0
+
+    if [ ! -f "${args_file}" ]; then
+        return
     fi
-    echo " Run ${RUN} Progress : ${RUN_PARTS} / ${TOTAL_RUN} partitions completed"
-fi
-echo " Category I   : ${DONE_CATI} / ${TOTAL_CATI} completed"
-echo " Category II  : ${DONE_CATII} / ${TOTAL_CATII} completed"
-echo " Category III : ${DONE_CATIII} / ${TOTAL_CATIII} completed"
-echo " Total        : ${DONE_ALL} / ${TOTAL_ALL} completed"
+
+    while read -r r p cat; do
+        [ -z "$r" ] && continue
+        total=$((total + 1))
+        local target="${OUT_PARTS}/${cat}/run${r}/part_${p}.root"
+        if [ -f "$target" ]; then
+            local sz=$(stat -c%s "$target" 2>/dev/null || echo 0)
+            if [ "$sz" -gt 1000 ]; then
+                done=$((done + 1))
+            fi
+        fi
+    done < "${args_file}"
+
+    local pct="0.0%"
+    if [ "$total" -gt 0 ]; then
+        pct=$(awk "BEGIN {printf \"%.1f%%\", ($done/$total)*100}")
+    fi
+
+    printf "%-18s | %-12d | %-12d | %-10s\n" "${label}" "${total}" "${done}" "${pct}"
+}
+
+printf "%-18s | %-12s | %-12s | %-10s\n" "Group / Year" "Total Parts" "Extracted" "Progress"
+echo "----------------------------------------------------------------------"
+
+check_progress "Cat II (2022)" "${DIR}/args_partitions_catII_max50.txt"
+check_progress "Cat III (2023)" "${DIR}/args_partitions_catIII_2023_max50.txt"
+check_progress "Cat III (2024)" "${DIR}/args_partitions_catIII_2024_max50.txt"
+check_progress "Cat III (2025)" "${DIR}/args_partitions_catIII_2025_max50.txt"
+check_progress "Cat III (2026)" "${DIR}/args_partitions_catIII_2026_max50.txt"
+echo "----------------------------------------------------------------------"
+check_progress "Total (All Active)" "${DIR}/args_partitions_all_max50.txt"
 echo "======================================================================"
