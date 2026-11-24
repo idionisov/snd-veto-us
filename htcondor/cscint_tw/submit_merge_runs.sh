@@ -14,7 +14,7 @@ DRY_RUN=0
 SPECIFIC_RUN=""
 
 # Parse positional target if given first
-if [[ $# -gt 0 ]] && [[ "$1" =~ ^(catII|catIII|2023|2025|2026|catIII_2023|catIII_2025|catIII_2026|all)$ ]]; then
+if [[ $# -gt 0 ]] && [[ "$1" =~ ^(catII|catIII|2023|2024|2025|2026|catIII_2023|catIII_2024|catIII_2025|catIII_2026|all)$ ]]; then
     TARGET="$1"
     shift
 fi
@@ -28,7 +28,7 @@ Targets:
   2023 | catIII_2023      Merge 10 Category III 2023 runs
   2025 | catIII_2025      Merge 10 Category III 2025 runs
   2026 | catIII_2026      Merge 10 Category III 2026 runs
-  catIII                  Merge all 30 Category III runs (2023, 2025, 2026)
+  catIII                  Merge all 30 Category III runs (2023, 2024, 2025, 2026)
   all                     Merge all 63 runs across Cat II & Cat III
 
 Options:
@@ -44,7 +44,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        catII|catIII|2023|2025|2026|catIII_2023|catIII_2025|catIII_2026|all)
+        catII|catIII|2023|2024|2025|2026|catIII_2023|catIII_2024|catIII_2025|catIII_2026|all)
             TARGET="$1"; shift ;;
         -r|--run) SPECIFIC_RUN="$2"; shift 2 ;;
         -f|--force) FORCE=1; shift ;;
@@ -65,6 +65,9 @@ case "${TARGET}" in
     2023|catIII_2023)
         ARGS_FILE="${DIR}/args_merge_runs_catIII_2023.txt"
         ;;
+    2024|catIII_2024)
+        ARGS_FILE="${DIR}/args_merge_runs_catIII_2024.txt"
+        ;;
     2025|catIII_2025)
         ARGS_FILE="${DIR}/args_merge_runs_catIII_2025.txt"
         ;;
@@ -78,7 +81,7 @@ case "${TARGET}" in
         ARGS_FILE="${DIR}/args_merge_runs_all.txt"
         ;;
     *)
-        echo "[ERROR] Unknown target: '${TARGET}'. Valid options: catII, 2023, 2025, 2026, catIII, all" >&2
+        echo "[ERROR] Unknown target: '${TARGET}'. Valid options: catII, 2023, 2024, 2025, 2026, catIII, all" >&2
         exit 1
         ;;
 esac
