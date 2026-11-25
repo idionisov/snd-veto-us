@@ -4,7 +4,7 @@
 # ==============================================================================
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_PARTS="/eos/user/i/idioniso/Timing/timewalk_parts"
+OUT_PARTS="${1:-/eos/user/i/idioniso/Timing/timewalk2/parts}"
 
 echo "======================================================================"
 echo " HTCondor Queue Status (timewalk)"
@@ -12,10 +12,13 @@ echo "======================================================================"
 condor_q -nobatch 2>/dev/null | grep -E "timewalk_run|ID" | head -n 20 || condor_q
 echo ""
 
-# Resolve argument files (prefer max40 if generated, fallback to max20)
-P_SUFFIX="max40"
-if [ ! -f "${DIR}/args_partitions_all_max40.txt" ]; then
-    P_SUFFIX="max20"
+# Resolve argument files (prefer max50, fallback to max40, then max20)
+P_SUFFIX="max50"
+if [ ! -f "${DIR}/args_partitions_all_max50.txt" ]; then
+    P_SUFFIX="max40"
+    if [ ! -f "${DIR}/args_partitions_all_max40.txt" ]; then
+        P_SUFFIX="max20"
+    fi
 fi
 
 ARGS_ALL="${DIR}/args_partitions_all_${P_SUFFIX}.txt"

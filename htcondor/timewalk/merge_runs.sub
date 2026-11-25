@@ -12,9 +12,11 @@ initialdir              = $(base_dir)
 args_file               = $(args_file:$(base_dir)/args_merge_runs_catII.txt)
 flavour                 = $(flavour:workday)
 force                   = $(force:1)
+parts_base              = $(parts_base:/eos/user/i/idioniso/Timing/timewalk2/parts)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk2/runs)
 
 executable              = $(base_dir)/run_merge_run_worker.sh
-arguments               = $(run) $(category)
+arguments               = $(run) $(category) $(parts_base) $(out_dir)
 environment             = "FORCE=$(force)"
 
 output                  = $(base_dir)/out/merge_run$(run)_$(ClusterId)_$(ProcId).out

@@ -27,13 +27,16 @@ shift || true
 
 FLAVOUR="${FLAVOUR:-workday}"
 FORCE_FLAG="${FORCE:-0}"
+OUT_BASE="${OUT_BASE:-/eos/user/i/idioniso/Timing/timewalk2/parts}"
+CSCINT_FILE="${CSCINT_FILE:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
 
 echo "======================================================================"
 echo " Submitting Time-Walk Partition Jobs (Max 50 Partitions/Run)"
 echo " Target Category : ${TARGET}"
 echo " Job Flavour     : ${FLAVOUR}"
 echo " Force Reprocess : FORCE=${FORCE_FLAG}"
-echo " c_scint Fits    : /eos/user/i/idioniso/Timing/cscint/fits"
+echo " c_scint File    : ${CSCINT_FILE}"
+echo " Output Base     : ${OUT_BASE}"
 echo " Time            : $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
 
@@ -45,7 +48,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -56,7 +60,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -67,7 +72,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -78,7 +84,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -89,7 +96,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -100,7 +108,8 @@ case "${TARGET}" in
             args_file="${ARGS_FILE}" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
         ;;
 
@@ -112,7 +121,8 @@ case "${TARGET}" in
                 args_file="${ARGS_Y}" \
                 flavour="${FLAVOUR}" \
                 force="${FORCE_FLAG}" \
-                cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+                out_base="${OUT_BASE}" \
+                cscint_file="${CSCINT_FILE}" \
                 "$@"
         done
         ;;
@@ -123,7 +133,8 @@ case "${TARGET}" in
             args_file="${DIR}/args_partitions_catII_max50.txt" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
 
         echo "[2/3] Submitting Category I ($(wc -l < args_partitions_catI_max50.txt) jobs)..."
@@ -131,7 +142,8 @@ case "${TARGET}" in
             args_file="${DIR}/args_partitions_catI_max50.txt" \
             flavour="${FLAVOUR}" \
             force="${FORCE_FLAG}" \
-            cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+            out_base="${OUT_BASE}" \
+            cscint_file="${CSCINT_FILE}" \
             "$@"
 
         echo "[3/3] Submitting Category III (40 runs, 2,000 jobs)..."
@@ -141,7 +153,8 @@ case "${TARGET}" in
                 args_file="${ARGS_Y}" \
                 flavour="${FLAVOUR}" \
                 force="${FORCE_FLAG}" \
-                cscint_dir="${CSCINT_DIR:-/eos/user/i/idioniso/Timing/cscint/fits}" \
+                out_base="${OUT_BASE}" \
+                cscint_file="${CSCINT_FILE}" \
                 "$@"
         done
         ;;

@@ -4,8 +4,8 @@
 # ==============================================================================
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IN_DIR="/eos/user/i/idioniso/Timing/timewalk/runs"
-OUT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits"
+IN_DIR="${1:-/eos/user/i/idioniso/Timing/timewalk2/runs}"
+OUT_DIR="${2:-/eos/user/i/idioniso/Timing/timewalk2/fits}"
 
 echo "======================================================================"
 echo " HTCondor Queue Status (fit_tw)"

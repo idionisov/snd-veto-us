@@ -97,3 +97,5 @@ clangd/
 # Temporary Figures & Plots
 # ---------------------
 alignment_plots/
+*.png
+scratch/

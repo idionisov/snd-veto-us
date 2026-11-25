@@ -1,0 +1,37 @@
+# ==============================================================================
+# HTCondor Submit File: Merge Time-Walk Partitions for a Single Run (DAG Node)
+#
+# Arguments passed via VARS in DAG file:
+#   $(run)      : Run number (e.g., 5119)
+#   $(category) : Detector operational category (e.g., catII or catIII)
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:workday)
+force                   = $(force:1)
+parts_base              = $(parts_base:/eos/user/i/idioniso/Timing/timewalk2/parts)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk2/runs)
+
+executable              = $(base_dir)/run_merge_run_worker.sh
+arguments               = $(run) $(category) $(parts_base) $(out_dir)
+environment             = "FORCE=$(force)"
+
+output                  = $(base_dir)/out/merge_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/merge_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/merge_runs_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 4
+request_memory          = 8GB
+request_disk            = 10GB
+
+queue 1

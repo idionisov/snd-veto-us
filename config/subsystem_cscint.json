@@ -1,0 +1,8 @@
+{
+  "description": "Effective propagation speed per subsystem across 2022-2026 operational eras",
+  "subsystems": {
+    "US": 13.82,
+    "DS": 14.71,
+    "Veto": 13.05
+  }
+}

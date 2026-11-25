@@ -1,0 +1,37 @@
+# ==============================================================================
+# HTCondor Submit File: Time-Walk Parameter Fitting for a Single Run (DAG Node)
+#
+# Arguments passed via VARS in DAG file:
+#   $(run) : Run number (e.g., 5119)
+# ==============================================================================
+
+base_dir                = /afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk
+initialdir              = $(base_dir)
+
+flavour                 = $(flavour:workday)
+in_dir                  = $(in_dir:/eos/user/i/idioniso/Timing/timewalk2/runs)
+out_dir                 = $(out_dir:/eos/user/i/idioniso/Timing/timewalk2/fits)
+cscint_file             = $(cscint_file:/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json)
+out_root_dir            = $(out_root_dir:/eos/user/i/idioniso/Timing/timewalk2/fits_root)
+
+executable              = $(base_dir)/run_fit_worker.sh
+arguments               = $(run) $(in_dir) $(out_dir) $(cscint_file) $(out_root_dir)
+environment             = "FORCE=$(force:0) SAVE_CANVAS=$(save_canvas:1)"
+
+output                  = $(base_dir)/out/fit_tw_run$(run)_$(ClusterId)_$(ProcId).out
+error                   = $(base_dir)/err/fit_tw_run$(run)_$(ClusterId)_$(ProcId).err
+log                     = $(base_dir)/log/fit_tw_$(ClusterId).log
+
+getenv                  = False
+notification            = Never
+requirements            = (OpSysAndVer =?= "AlmaLinux9")
+
++JobFlavour             = "$(flavour)"
++AccountingGroup        = "group_u_SNDLHC.users"
+MY.JobRequiresAFS       = True
+
+request_cpus            = 1
+request_memory          = 4GB
+request_disk            = 2GB
+
+queue 1

@@ -16,9 +16,9 @@ set -eo pipefail
 RUN="${1:-5119}"
 PARTITION="${2:-0}"
 CATEGORY="${3:-catII}"
-OUT_BASE="${4:-/eos/user/i/idioniso/Timing/timewalk_parts}"
+OUT_BASE="${4:-/eos/user/i/idioniso/Timing/timewalk2/parts}"
 CSCINT_DIR="${5:-/eos/user/i/idioniso/Timing/cscint/fits}"
-CSCINT_FILE="${6:-}"
+CSCINT_FILE="${6:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
 FORCE="${FORCE:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

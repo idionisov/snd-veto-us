@@ -123,13 +123,28 @@ def get_tsf0_window(run_nr=None, json_path=None):
     return -0.5, 6.0
 
 
-def load_run_cscint(run_nr: int, cscint_file: str = None, cscint_dir: str = _DEFAULT_CSCINT_DIR, placeholder: float = 13.5):
+def load_run_cscint(
+    run_nr: int,
+    cscint_file: str = None,
+    cscint_dir: str = _DEFAULT_CSCINT_DIR,
+    placeholder: float = 13.5,
+    use_subsystem_cscint: bool = False,
+    cscint_us: float = 13.82,
+    cscint_ds: float = 14.71,
+    cscint_veto: float = 13.05
+):
     """
-    Loads channel-specific and run-unified c_scint constants from JSON.
+    Loads channel-specific and run-unified c_scint constants from JSON,
+    or returns unified effective constants per subsystem (US, DS, Veto).
     Returns:
-      specific_cscint: {'DS': {ch: val}, 'SF': {ch: val}}
+      specific_cscint: {'DS': {ch: val}, 'SF': {ch: val}} or {'subsystems': {1: veto, 2: us, 3: ds}}
       unified_cscint:  {'DS': val, 'SF': val}
     """
+    if use_subsystem_cscint:
+        print(f"[INFO] [Run {run_nr}] Using unified subsystem c_scint constants: US={cscint_us:.2f}, DS={cscint_ds:.2f}, Veto={cscint_veto:.2f} cm/ns", flush=True)
+        subsys_map = {1: cscint_veto, 2: cscint_us, 3: cscint_ds}
+        return {"subsystems": subsys_map, "DS": {}, "SF": {}}, {"DS": cscint_ds, "SF": cscint_veto}
+
     candidates = []
     if cscint_file and os.path.exists(cscint_file):
         candidates.append(cscint_file)
@@ -166,6 +181,15 @@ def load_run_cscint(run_nr: int, cscint_file: str = None, cscint_dir: str = _DEF
     if not data:
         print(f"[INFO] [Run {run_nr}] No precomputed c_scint file found. Using placeholder: {placeholder:.2f} cm/ns", flush=True)
         return specific, unified
+
+    # Auto-detect if JSON is a subsystem-unified configuration file
+    if "subsystems" in data and isinstance(data["subsystems"], dict):
+        c_us = float(data["subsystems"].get("US", cscint_us))
+        c_ds_val = float(data["subsystems"].get("DS", cscint_ds))
+        c_veto = float(data["subsystems"].get("Veto", cscint_veto))
+        print(f"[INFO] [Run {run_nr}] Loaded unified subsystem c_scint constants from {loaded_path}: US={c_us:.2f}, DS={c_ds_val:.2f}, Veto={c_veto:.2f} cm/ns", flush=True)
+        subsys_map = {1: c_veto, 2: c_us, 3: c_ds_val}
+        return {"subsystems": subsys_map, "DS": {}, "SF": {}}, {"DS": c_ds_val, "SF": c_veto}
 
     for ref in ("DS", "SF"):
         if ref in data and isinstance(data[ref], dict):
@@ -221,7 +245,11 @@ def run_worker(
     cscint_dir=_DEFAULT_CSCINT_DIR,
     cscint_file=None,
     include_unified=False,
-    require_veto_scifi1=True
+    require_veto_scifi1=True,
+    use_subsystem_cscint=False,
+    cscint_us=13.82,
+    cscint_ds=14.71,
+    cscint_veto=13.05
 ):
     """Processes a single run (or partition) in an isolated subprocess to produce timewalk histograms."""
     import ROOT
@@ -312,7 +340,11 @@ def run_worker(
     specific_cscint, unified_cscint = load_run_cscint(
         run_nr=run_nr,
         cscint_file=cscint_file,
-        cscint_dir=cscint_dir
+        cscint_dir=cscint_dir,
+        use_subsystem_cscint=use_subsystem_cscint,
+        cscint_us=cscint_us,
+        cscint_ds=cscint_ds,
+        cscint_veto=cscint_veto
     )
 
     # Monkey-patch GetDSHaverage for safe DS horizontal time calculation
@@ -699,9 +731,16 @@ def run_worker(
                 else:
                     sign = 1.0 if sipm_num < 8 else -1.0
 
+                # Resolve c_scint speed (subsystem-unified or channel-specific)
+                if "subsystems" in specific_cscint:
+                    c_ds = specific_cscint["subsystems"].get(s, unified_cscint["DS"])
+                    c_sf = specific_cscint["subsystems"].get(s, unified_cscint["SF"])
+                else:
+                    c_ds = specific_cscint["DS"].get(ch_key, unified_cscint["DS"])
+                    c_sf = specific_cscint["SF"].get(ch_key, unified_cscint["SF"])
+
                 # A. DS Reference TimeWalk
                 if has_valid_ds:
-                    c_ds = specific_cscint["DS"].get(ch_key, unified_cscint["DS"])
                     if c_ds and c_ds > 0:
                         t_tof = t_raw + sign * (dx / c_ds)
                         dt_ds = tds0_val - t_tof
@@ -714,7 +753,6 @@ def run_worker(
 
                 # B. SciFi Reference TimeWalk
                 if has_valid_sf:
-                    c_sf = specific_cscint["SF"].get(ch_key, unified_cscint["SF"])
                     if c_sf and c_sf > 0:
                         t_tof = t_raw + sign * (dx / c_sf)
                         dt_sf = tsf0_val - t_tof
@@ -840,6 +878,34 @@ def parse_args():
         default=True,
         help="Disable requirement of at least one Veto hit or SciFi station 1 hit per event"
     )
+    parser.add_argument(
+        "--use-subsystem-cscint",
+        dest="use_subsystem_cscint",
+        action="store_true",
+        default=False,
+        help="Use unified effective c_scint per subsystem (US: 13.82, DS: 14.71, Veto: 13.05 cm/ns) instead of per-channel fit JSON"
+    )
+    parser.add_argument(
+        "--cscint-us",
+        dest="cscint_us",
+        type=float,
+        default=13.82,
+        help="Effective c_scint for Upstream (US) subsystem in cm/ns (default: 13.82)"
+    )
+    parser.add_argument(
+        "--cscint-ds",
+        dest="cscint_ds",
+        type=float,
+        default=14.71,
+        help="Effective c_scint for Downstream (DS) subsystem in cm/ns (default: 14.71)"
+    )
+    parser.add_argument(
+        "--cscint-veto",
+        dest="cscint_veto",
+        type=float,
+        default=13.05,
+        help="Effective c_scint for Veto subsystem in cm/ns (default: 13.05)"
+    )
 
     # Internal worker flags
     parser.add_argument(
@@ -874,7 +940,11 @@ def main():
             cscint_dir=args.cscint_dir,
             cscint_file=args.cscint_file,
             include_unified=args.include_unified,
-            require_veto_scifi1=args.require_veto_scifi1
+            require_veto_scifi1=args.require_veto_scifi1,
+            use_subsystem_cscint=args.use_subsystem_cscint,
+            cscint_us=args.cscint_us,
+            cscint_ds=args.cscint_ds,
+            cscint_veto=args.cscint_veto
         )
         return
 

@@ -7,10 +7,10 @@ set -eo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
-IN_DIR="/eos/user/i/idioniso/Timing/timewalk/runs"
-OUT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits"
-CSCINT_DIR="/eos/user/i/idioniso/Timing/cscint/fits"
-OUT_ROOT_DIR="/eos/user/i/idioniso/Timing/timewalk/fits_root"
+IN_DIR="/eos/user/i/idioniso/Timing/timewalk2/runs"
+OUT_DIR="/eos/user/i/idioniso/Timing/timewalk2/fits"
+CSCINT_PATH="/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json"
+OUT_ROOT_DIR="/eos/user/i/idioniso/Timing/timewalk2/fits_root"
 FLAVOUR="workday"
 FORCE=0
 SAVE_CANVAS=1
@@ -45,7 +45,8 @@ Options:
   --in-dir DIR            Input directory with run ROOT files (default: ${IN_DIR})
   --out-dir DIR           Output directory for fit JSONs (default: ${OUT_DIR})
   --out-root-dir DIR      Output directory for updated ROOT files (default: ${OUT_ROOT_DIR})
-  --cscint-dir DIR        Directory for c_scint constants (default: ${CSCINT_DIR})
+  --cscint-file FILE      Path or directory for c_scint constants (default: ${CSCINT_PATH})
+  --cscint-dir DIR        Alias for --cscint-file
   -h, --help              Show this help message
 EOF
     exit 0
@@ -82,7 +83,7 @@ while [[ $# -gt 0 ]]; do
         --in-dir) IN_DIR="$2"; shift 2 ;;
         --out-dir) OUT_DIR="$2"; shift 2 ;;
         --out-root-dir) OUT_ROOT_DIR="$2"; shift 2 ;;
-        --cscint-dir) CSCINT_DIR="$2"; shift 2 ;;
+        --cscint-file|--cscint-dir) CSCINT_PATH="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "[ERROR] Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -185,7 +186,7 @@ echo " SND@LHC Time-Walk Fitting HTCondor Submission"
 echo " Input Directory:      ${IN_DIR}"
 echo " Output Directory:     ${OUT_DIR}"
 echo " Destination ROOT:     ${OUT_ROOT_DIR}"
-echo " c_scint Constants:    ${CSCINT_DIR}"
+echo " c_scint Constants:    ${CSCINT_PATH}"
 echo " Category Filter:      ${CATEGORY}"
 echo " Year Filter:          ${YEAR:-all}"
 echo " Only Missing:         ${ONLY_MISSING}"
@@ -209,7 +210,7 @@ condor_submit fit_timewalk.sub \
     in_dir="${IN_DIR}" \
     out_dir="${OUT_DIR}" \
     out_root_dir="${OUT_ROOT_DIR}" \
-    cscint_dir="${CSCINT_DIR}" \
+    cscint_dir="${CSCINT_PATH}" \
     flavour="${FLAVOUR}" \
     force="${FORCE}" \
     save_canvas="${SAVE_CANVAS}"

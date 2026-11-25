@@ -1,0 +1,167 @@
+# ==============================================================================
+# HTCondor DAGMan Workflow: Time-Walk Calibration Pipeline
+# Group: Cat III (2023)
+# Runs : 10 independent run pipelines (Fill -> Merge -> Fit)
+# ==============================================================================
+
+CONFIG dagman.config
+
+# --- Run 6079 (catIII, 50 partitions) ---
+JOB  fill_6079   timewalk.sub
+VARS fill_6079   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6079.txt"
+RETRY fill_6079  2
+
+JOB  merge_6079  merge_single_run.sub
+VARS merge_6079  run="6079" category="catIII"
+RETRY merge_6079 2
+
+JOB  fit_6079    fit_single_run.sub
+VARS fit_6079    run="6079"
+RETRY fit_6079   2
+
+PARENT fill_6079 CHILD merge_6079
+PARENT merge_6079 CHILD fit_6079
+
+# --- Run 6568 (catIII, 50 partitions) ---
+JOB  fill_6568   timewalk.sub
+VARS fill_6568   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6568.txt"
+RETRY fill_6568  2
+
+JOB  merge_6568  merge_single_run.sub
+VARS merge_6568  run="6568" category="catIII"
+RETRY merge_6568 2
+
+JOB  fit_6568    fit_single_run.sub
+VARS fit_6568    run="6568"
+RETRY fit_6568   2
+
+PARENT fill_6568 CHILD merge_6568
+PARENT merge_6568 CHILD fit_6568
+
+# --- Run 6574 (catIII, 50 partitions) ---
+JOB  fill_6574   timewalk.sub
+VARS fill_6574   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6574.txt"
+RETRY fill_6574  2
+
+JOB  merge_6574  merge_single_run.sub
+VARS merge_6574  run="6574" category="catIII"
+RETRY merge_6574 2
+
+JOB  fit_6574    fit_single_run.sub
+VARS fit_6574    run="6574"
+RETRY fit_6574   2
+
+PARENT fill_6574 CHILD merge_6574
+PARENT merge_6574 CHILD fit_6574
+
+# --- Run 6577 (catIII, 50 partitions) ---
+JOB  fill_6577   timewalk.sub
+VARS fill_6577   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6577.txt"
+RETRY fill_6577  2
+
+JOB  merge_6577  merge_single_run.sub
+VARS merge_6577  run="6577" category="catIII"
+RETRY merge_6577 2
+
+JOB  fit_6577    fit_single_run.sub
+VARS fit_6577    run="6577"
+RETRY fit_6577   2
+
+PARENT fill_6577 CHILD merge_6577
+PARENT merge_6577 CHILD fit_6577
+
+# --- Run 6590 (catIII, 50 partitions) ---
+JOB  fill_6590   timewalk.sub
+VARS fill_6590   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6590.txt"
+RETRY fill_6590  2
+
+JOB  merge_6590  merge_single_run.sub
+VARS merge_6590  run="6590" category="catIII"
+RETRY merge_6590 2
+
+JOB  fit_6590    fit_single_run.sub
+VARS fit_6590    run="6590"
+RETRY fit_6590   2
+
+PARENT fill_6590 CHILD merge_6590
+PARENT merge_6590 CHILD fit_6590
+
+# --- Run 6593 (catIII, 50 partitions) ---
+JOB  fill_6593   timewalk.sub
+VARS fill_6593   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6593.txt"
+RETRY fill_6593  2
+
+JOB  merge_6593  merge_single_run.sub
+VARS merge_6593  run="6593" category="catIII"
+RETRY merge_6593 2
+
+JOB  fit_6593    fit_single_run.sub
+VARS fit_6593    run="6593"
+RETRY fit_6593   2
+
+PARENT fill_6593 CHILD merge_6593
+PARENT merge_6593 CHILD fit_6593
+
+# --- Run 6596 (catIII, 50 partitions) ---
+JOB  fill_6596   timewalk.sub
+VARS fill_6596   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6596.txt"
+RETRY fill_6596  2
+
+JOB  merge_6596  merge_single_run.sub
+VARS merge_6596  run="6596" category="catIII"
+RETRY merge_6596 2
+
+JOB  fit_6596    fit_single_run.sub
+VARS fit_6596    run="6596"
+RETRY fit_6596   2
+
+PARENT fill_6596 CHILD merge_6596
+PARENT merge_6596 CHILD fit_6596
+
+# --- Run 6640 (catIII, 50 partitions) ---
+JOB  fill_6640   timewalk.sub
+VARS fill_6640   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6640.txt"
+RETRY fill_6640  2
+
+JOB  merge_6640  merge_single_run.sub
+VARS merge_6640  run="6640" category="catIII"
+RETRY merge_6640 2
+
+JOB  fit_6640    fit_single_run.sub
+VARS fit_6640    run="6640"
+RETRY fit_6640   2
+
+PARENT fill_6640 CHILD merge_6640
+PARENT merge_6640 CHILD fit_6640
+
+# --- Run 6663 (catIII, 50 partitions) ---
+JOB  fill_6663   timewalk.sub
+VARS fill_6663   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6663.txt"
+RETRY fill_6663  2
+
+JOB  merge_6663  merge_single_run.sub
+VARS merge_6663  run="6663" category="catIII"
+RETRY merge_6663 2
+
+JOB  fit_6663    fit_single_run.sub
+VARS fit_6663    run="6663"
+RETRY fit_6663   2
+
+PARENT fill_6663 CHILD merge_6663
+PARENT merge_6663 CHILD fit_6663
+
+# --- Run 6667 (catIII, 50 partitions) ---
+JOB  fill_6667   timewalk.sub
+VARS fill_6667   args_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/htcondor/timewalk/dag_args/parts_run6667.txt"
+RETRY fill_6667  2
+
+JOB  merge_6667  merge_single_run.sub
+VARS merge_6667  run="6667" category="catIII"
+RETRY merge_6667 2
+
+JOB  fit_6667    fit_single_run.sub
+VARS fit_6667    run="6667"
+RETRY fit_6667   2
+
+PARENT fill_6667 CHILD merge_6667
+PARENT merge_6667 CHILD fit_6667

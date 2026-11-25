@@ -6,16 +6,16 @@ set -eo pipefail
 #
 # Arguments:
 #   $1: RUN         (e.g., 5119 or catII)
-#   $2: IN_DIR      (default: /eos/user/i/idioniso/Timing/timewalk/runs)
-#   $3: OUT_DIR     (default: /eos/user/i/idioniso/Timing/timewalk/fits)
-#   $4: CSCINT_DIR  (default: /eos/user/i/idioniso/Timing/cscint/fits)
+#   $2: IN_DIR      (default: /eos/user/i/idioniso/Timing/timewalk2/runs)
+#   $3: OUT_DIR     (default: /eos/user/i/idioniso/Timing/timewalk2/fits)
+#   $4: CSCINT_PATH (default: /afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json)
 # ==============================================================================
 
 RUN="${1:-5119}"
-IN_DIR="${2:-/eos/user/i/idioniso/Timing/timewalk/runs}"
-OUT_DIR="${3:-/eos/user/i/idioniso/Timing/timewalk/fits}"
-CSCINT_DIR="${4:-/eos/user/i/idioniso/Timing/cscint/fits}"
-OUT_ROOT_DIR="${5:-/eos/user/i/idioniso/Timing/timewalk/fits_root}"
+IN_DIR="${2:-/eos/user/i/idioniso/Timing/timewalk2/runs}"
+OUT_DIR="${3:-/eos/user/i/idioniso/Timing/timewalk2/fits}"
+CSCINT_PATH="${4:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
+OUT_ROOT_DIR="${5:-/eos/user/i/idioniso/Timing/timewalk2/fits_root}"
 SAVE_CANVAS="${SAVE_CANVAS:-1}"
 FORCE="${FORCE:-0}"
 
@@ -49,7 +49,7 @@ echo " Host:        $(hostname)"
 echo " Target:      Run ${RUN}"
 echo " Input File:  ${INPUT_FILE}"
 echo " Output JSON: ${TARGET_JSON}"
-echo " c_scint Dir: ${CSCINT_DIR}"
+echo " c_scint:     ${CSCINT_PATH}"
 echo " Save Canvas: ${SAVE_CANVAS}"
 echo " Time:        $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
@@ -96,8 +96,10 @@ if [ "${SAVE_CANVAS}" != "1" ]; then
 fi
 
 CSCINT_OPT=""
-if [ -d "${CSCINT_DIR}" ]; then
-    CSCINT_OPT="--cscint-dir ${CSCINT_DIR}"
+if [ -f "${CSCINT_PATH}" ]; then
+    CSCINT_OPT="--cscint-file ${CSCINT_PATH}"
+elif [ -d "${CSCINT_PATH}" ]; then
+    CSCINT_OPT="--cscint-dir ${CSCINT_PATH}"
 fi
 
 ROOT_DIR_OPT=""

@@ -11,10 +11,12 @@ set -eo pipefail
 
 RUN="$1"
 CAT="$2"
+PARTS_BASE="${3:-/eos/user/i/idioniso/Timing/timewalk2/parts}"
+OUT_DIR="${4:-/eos/user/i/idioniso/Timing/timewalk2/runs}"
 FORCE="${FORCE:-1}"
 
 if [ -z "${RUN}" ] || [ -z "${CAT}" ]; then
-    echo "Usage: $0 <run> <category>" >&2
+    echo "Usage: $0 <run> <category> [parts_base] [out_dir]" >&2
     exit 1
 fi
 
@@ -26,8 +28,7 @@ else
     exit 1
 fi
 
-IN_DIR="/eos/user/i/idioniso/Timing/timewalk_parts/${CAT}/run${RUN}"
-OUT_DIR="/eos/user/i/idioniso/Timing/timewalk/runs"
+IN_DIR="${PARTS_BASE}/${CAT}/run${RUN}"
 OUT_FILE="${OUT_DIR}/run${RUN}.root"
 
 mkdir -p "${OUT_DIR}"

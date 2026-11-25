@@ -7,6 +7,8 @@ set -eo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${DIR}"
 
+PARTS_BASE="/eos/user/i/idioniso/Timing/timewalk2/parts"
+OUT_DIR="/eos/user/i/idioniso/Timing/timewalk2/runs"
 TARGET="catII"
 FLAVOUR="workday"
 FORCE=1
@@ -57,7 +59,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mkdir -p out err log /eos/user/i/idioniso/Timing/timewalk/runs
+mkdir -p out err log "${OUT_DIR}"
 
 case "${TARGET}" in
     catII|catii|CATII|II)
@@ -119,9 +121,11 @@ fi
 condor_submit merge_runs.sub \
     args_file="${SUBMIT_ARGS}" \
     flavour="${FLAVOUR}" \
-    force="${FORCE}"
+    force="${FORCE}" \
+    parts_base="${PARTS_BASE}" \
+    out_dir="${OUT_DIR}"
 
 echo "======================================================================"
 echo "[SUCCESS] Submitted ${N_RUNS} run merge jobs. Monitor with: condor_q"
-echo " Destination: /eos/user/i/idioniso/Timing/timewalk/runs/run<RUN>.root"
+echo " Destination: ${OUT_DIR}/run<RUN>.root"
 echo "======================================================================"

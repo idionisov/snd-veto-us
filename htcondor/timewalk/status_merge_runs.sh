@@ -4,7 +4,7 @@
 # ==============================================================================
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNS_DIR="/eos/user/i/idioniso/Timing/timewalk/runs"
+RUNS_DIR="${1:-/eos/user/i/idioniso/Timing/timewalk2/runs}"
 
 echo "======================================================================"
 echo " HTCondor Queue Status (merge_run)"
