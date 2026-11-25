@@ -85,8 +85,14 @@ case "${TARGET}" in
     2023|catIII_2023)
         ARGS_FILE="${DIR}/args_fit_catIII_2023.txt"
         ;;
+    2024|catIII_2024)
+        ARGS_FILE="${DIR}/args_fit_catIII_2024.txt"
+        ;;
     2025|catIII_2025)
         ARGS_FILE="${DIR}/args_fit_catIII_2025.txt"
+        ;;
+    2026|catIII_2026)
+        ARGS_FILE="${DIR}/args_fit_catIII_2026.txt"
         ;;
     *)
         echo "[ERROR] Unknown target: ${TARGET}" >&2
