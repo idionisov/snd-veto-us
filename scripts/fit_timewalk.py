@@ -69,6 +69,37 @@ def nll_objective(sigma_sys, x_data, y_data, sigma_stat, params):
     return 0.5 * np.sum(((y_data - y_pred) ** 2) / var_total + np.log(var_total))
 
 
+def compute_regularized_covariance(x_data, y_data, sigma_y, popt, rcond=1e-4):
+    """
+    Computes regularized parameter covariance matrix via truncated SVD of the weighted Jacobian.
+    Filters out the scale-gauge singularity between (alpha, beta, qdc0) to extract accurate uncertainties.
+    """
+    t0, alpha, beta, qdc0, gamma = popt
+    denom = beta * x_data - qdc0
+    denom = np.where(denom <= 1e-4, 1e-4, denom)
+
+    # Analytical Jacobian matrix J: d(model)/d(param)
+    J = np.zeros((len(x_data), 5), dtype=float)
+    J[:, 0] = 1.0                             # dt / dt0
+    J[:, 1] = 1.0 / denom                     # dt / dalpha
+    J[:, 2] = -alpha * x_data / (denom ** 2)  # dt / dbeta
+    J[:, 3] = alpha / (denom ** 2)            # dt / dqdc0
+    J[:, 4] = x_data                          # dt / dgamma
+
+    w = 1.0 / np.maximum(1e-9, sigma_y)
+    Jw = J * w[:, None]
+
+    try:
+        U, S, Vt = np.linalg.svd(Jw, full_matrices=False)
+        cutoff = rcond * S[0]
+        S_inv = np.array([1.0 / s if s > cutoff else 0.0 for s in S])
+        cov = (Vt.T * (S_inv ** 2)) @ Vt
+    except np.linalg.LinAlgError:
+        cov = np.zeros((5, 5), dtype=float)
+
+    return cov
+
+
 def set_canvas_palette(name="jet"):
     """Configures ROOT color palette to jet/rainbow, plasma, viridis, etc."""
     name_lower = str(name).lower()
@@ -231,6 +262,31 @@ def fit_single_timewalk_hist(
     chi2_tot_ndf = chi2_tot / ndf
     rms_res = float(np.sqrt(np.mean((y_arr / y_fit - 1.0) ** 2)))
 
+    # Compute regularized covariance matrices (total and stat-only)
+    cov_tot = compute_regularized_covariance(x_arr, y_arr, ey_tot, popt, rcond=1e-4)
+    cov_stat = compute_regularized_covariance(x_arr, y_arr, ey_arr, popt, rcond=1e-4)
+
+    perr_tot = np.sqrt(np.maximum(0.0, np.diag(cov_tot)))
+    perr_stat = np.sqrt(np.maximum(0.0, np.diag(cov_stat)))
+
+    t0_err, alpha_err, beta_err, qdc0_err, gamma_err = [float(v) for v in perr_tot]
+    t0_stat_err, alpha_stat_err, beta_stat_err, qdc0_stat_err, gamma_stat_err = [float(v) for v in perr_stat]
+
+    # Effective amplitude A = alpha / beta and its uncertainty via full covariance propagation
+    beta_safe = beta if abs(beta) > 1e-4 else 1e-4
+    A_eff = float(alpha / beta_safe)
+    var_A = ((1.0 / beta_safe) ** 2 * cov_tot[1, 1] +
+             (alpha / (beta_safe ** 2)) ** 2 * cov_tot[2, 2] -
+             2.0 * (alpha / (beta_safe ** 3)) * cov_tot[1, 2])
+    A_eff_err = float(np.sqrt(max(0.0, var_A)))
+
+    # Effective pole Q_pole = qdc0 / beta and its uncertainty via full covariance propagation
+    Q_pole = float(qdc0 / beta_safe)
+    var_Q = ((1.0 / beta_safe) ** 2 * cov_tot[3, 3] +
+             (qdc0 / (beta_safe ** 2)) ** 2 * cov_tot[2, 2] -
+             2.0 * (qdc0 / (beta_safe ** 3)) * cov_tot[3, 2])
+    Q_pole_err = float(np.sqrt(max(0.0, var_Q)))
+
     # 4. Fine alignment parameter extraction (d_SiPM) via truncated mean of residual
     if ref == "SF":
         h_res = ROOT.TH1F(f"dt_residual_{ref}_{fixed_ch}", f"{fixed_ch} TW-corrected residual ({ref});dt_{{SiPM}}^{{TW, ToF}} [ns];Counts", 500, -45.0, 5.0)
@@ -291,10 +347,24 @@ def fit_single_timewalk_hist(
         "ey_tot": ey_tot,
         "y_fit": y_fit,
         "t0": t0,
+        "t0_err": t0_err,
+        "t0_stat_err": t0_stat_err,
         "alpha": alpha,
+        "alpha_err": alpha_err,
+        "alpha_stat_err": alpha_stat_err,
         "beta": beta,
+        "beta_err": beta_err,
+        "beta_stat_err": beta_stat_err,
         "qdc0": qdc0,
+        "qdc0_err": qdc0_err,
+        "qdc0_stat_err": qdc0_stat_err,
         "gamma": gamma,
+        "gamma_err": gamma_err,
+        "gamma_stat_err": gamma_stat_err,
+        "A_eff": A_eff,
+        "A_eff_err": A_eff_err,
+        "Q_pole": Q_pole,
+        "Q_pole_err": Q_pole_err,
         "sigma_sys": sigma_sys,
         "chi2_stat": chi2_stat,
         "chi2_stat_ndf": chi2_stat_ndf,
@@ -304,6 +374,7 @@ def fit_single_timewalk_hist(
         "qdc_limits": [qdc_min_fit, qdc_max_fit],
         "alignment_d": d_val,
         "alignment_d_err": d_unc,
+        "cov_matrix": cov_tot.tolist(),
         "h_residual": h_res,
     }
 
@@ -416,6 +487,11 @@ def build_timewalk_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, run_nr: in
     fit_tf1 = ROOT.TF1(f"fit_tw_{ref}_{fixed_ch}", "[0] + [1] / ([2]*x - [3]) + [4]*x", qdc_min_fit, qdc_max_fit)
     ROOT.SetOwnership(fit_tf1, False)
     fit_tf1.SetParameters(t0, alpha, beta, qdc0, gamma)
+    fit_tf1.SetParError(0, fit_res.get("t0_err", 0.0))
+    fit_tf1.SetParError(1, fit_res.get("alpha_err", 0.0))
+    fit_tf1.SetParError(2, fit_res.get("beta_err", 0.0))
+    fit_tf1.SetParError(3, fit_res.get("qdc0_err", 0.0))
+    fit_tf1.SetParError(4, fit_res.get("gamma_err", 0.0))
     fit_tf1.SetLineColor(ROOT.kRed + 1)
     fit_tf1.SetLineWidth(3)
     fit_tf1.Draw("SAME")
@@ -431,8 +507,13 @@ def build_timewalk_canvas(h2, fixed_ch: str, ref: str, fit_res: dict, run_nr: in
     leg.AddEntry(g_data_tot, "Total Uncertainty (SEM #oplus #sigma_{sys})", "f")
     leg.AddEntry(g_data_syst, "Systematic Floor (#sigma_{sys})", "f")
     leg.AddEntry(fit_tf1, f"Fit: #chi^{{2}}_{{stat}}/#nu = {fit_res['chi2_stat_ndf']:.1f} #rightarrow #chi^{{2}}_{{tot}}/#nu = {fit_res['chi2_tot_ndf']:.2f}", "l")
-    leg.AddEntry("", f"t_{{0}} = {t0:.2f} ns, #alpha = {alpha:.2f}, #beta = {beta:.2f}", "")
-    leg.AddEntry("", f"QDC_{{0}} = {qdc0:.2f}, #gamma = {gamma:.5f}", "")
+    t0_e = fit_res.get("t0_err", 0.0)
+    a_e = fit_res.get("alpha_err", 0.0)
+    b_e = fit_res.get("beta_err", 0.0)
+    q0_e = fit_res.get("qdc0_err", 0.0)
+    g_e = fit_res.get("gamma_err", 0.0)
+    leg.AddEntry("", f"t_{{0}} = {t0:.2f} #pm {t0_e:.2f} ns, #alpha = {alpha:.2f} #pm {a_e:.2f}, #beta = {beta:.2f} #pm {b_e:.2f}", "")
+    leg.AddEntry("", f"QDC_{{0}} = {qdc0:.2f} #pm {q0_e:.2f}, #gamma = {gamma:.5f} #pm {g_e:.5f}", "")
     leg.AddEntry("", f"#sigma_{{sys}} = {sigma_sys*1000:.1f} ps, RMS res = {fit_res['rms_residual']*100:.2f}%", "")
     leg.Draw()
 
@@ -541,6 +622,11 @@ def build_global_timewalk_summaries(summary_tw: dict, ref: str, run_nr: int = 0)
     hists["h_beta"] = ROOT.TH1F(f"h_tw_beta_{ref}", f"Time-Walk #beta ({ref});#beta;Channels", 100, 0.0, 30.0)
     hists["h_qdc0"] = ROOT.TH1F(f"h_tw_qdc0_{ref}", f"Time-Walk QDC_{{0}} ({ref});QDC_{{0}};Channels", 100, -10.0, 0.0)
     hists["h_gamma"] = ROOT.TH1F(f"h_tw_gamma_{ref}", f"Time-Walk #gamma ({ref});#gamma;Channels", 100, 0.0, 0.05)
+    hists["h_t0_err"] = ROOT.TH1F(f"h_tw_t0_err_{ref}", f"Time-Walk #sigma(t_{{0}}) ({ref});#sigma(t_{{0}}) [ns];Channels", 100, 0.0, 5.0)
+    hists["h_alpha_err"] = ROOT.TH1F(f"h_tw_alpha_err_{ref}", f"Time-Walk #sigma(#alpha) ({ref});#sigma(#alpha);Channels", 100, 0.0, 50.0)
+    hists["h_beta_err"] = ROOT.TH1F(f"h_tw_beta_err_{ref}", f"Time-Walk #sigma(#beta) ({ref});#sigma(#beta);Channels", 100, 0.0, 10.0)
+    hists["h_qdc0_err"] = ROOT.TH1F(f"h_tw_qdc0_err_{ref}", f"Time-Walk #sigma(QDC_{{0}}) ({ref});#sigma(QDC_{{0}});Channels", 100, 0.0, 10.0)
+    hists["h_gamma_err"] = ROOT.TH1F(f"h_tw_gamma_err_{ref}", f"Time-Walk #sigma(#gamma) ({ref});#sigma(#gamma);Channels", 100, 0.0, 0.01)
 
     # Sort detector IDs and construct contiguous indexing
     parsed_channels = []
@@ -570,6 +656,16 @@ def build_global_timewalk_summaries(summary_tw: dict, ref: str, run_nr: int = 0)
         hists["h_beta"].Fill(p["beta"])
         hists["h_qdc0"].Fill(p["qdc0"])
         hists["h_gamma"].Fill(p["gamma"])
+        if "t0_err" in p:
+            hists["h_t0_err"].Fill(p["t0_err"])
+        if "alpha_err" in p:
+            hists["h_alpha_err"].Fill(p["alpha_err"])
+        if "beta_err" in p:
+            hists["h_beta_err"].Fill(p["beta_err"])
+        if "qdc0_err" in p:
+            hists["h_qdc0_err"].Fill(p["qdc0_err"])
+        if "gamma_err" in p:
+            hists["h_gamma_err"].Fill(p["gamma_err"])
 
         base_x = det_to_idx[det]
         x_coord = base_x + (sipm - 7.5) / 18.0
@@ -596,6 +692,7 @@ def fit_file(
     output_path: str = None,
     cscint_file: str = None,
     cscint_dir: str = "/eos/user/i/idioniso/Timing/cscint/fits",
+    subsystem_cscint_file: str = "/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
     save_canvas: bool = True,
     palette: str = "jet",
     qdc_min: float = 0.0,
@@ -672,12 +769,19 @@ def fit_file(
                     if "_" in ch_name and ch_name.split("_")[0].isdigit():
                         ch_dirs.append((ch_name, r_dir.GetDirectory(ch_name)))
 
-    summary_tw = {"DS": {}, "SF": {}}
-    summary_alignment = {"DS": {}, "SF": {}}
+    summary_tw = {"DS": {}, "SF": {}, "DS_unified": {}, "SF_unified": {}}
+    summary_alignment = {"DS": {}, "SF": {}, "DS_unified": {}, "SF_unified": {}}
 
     total_ch = len(ch_dirs)
     if verbose:
         print(f" ~ [Run {run_nr}] Discovered {total_ch} candidate SiPM channels to fit.", flush=True)
+
+    target_fits = [
+        ("DS", ["dtvqdc-DS", "dtvqdc_DS"]),
+        ("SF", ["dtvqdc-SF", "dtvqdc_SF"]),
+        ("DS_unified", ["dtvqdc-DS-unified", "dtvqdc_DS_unified", "dtvqdc-DS_unified"]),
+        ("SF_unified", ["dtvqdc-SF-unified", "dtvqdc_SF_unified", "dtvqdc-SF_unified"]),
+    ]
 
     for idx, (ch_name, ch_dir) in enumerate(ch_dirs):
         if ch_name == "21005_15":
@@ -687,7 +791,7 @@ def fit_file(
         except ValueError:
             continue
 
-        for ref, h_keys in [("DS", ["dtvqdc-DS", "dtvqdc_DS"]), ("SF", ["dtvqdc-SF", "dtvqdc_SF"])]:
+        for ref, h_keys in target_fits:
             h2 = None
             for hk in h_keys:
                 candidate = ch_dir.Get(hk)
@@ -715,10 +819,19 @@ def fit_file(
 
             summary_tw[ref][ch_name] = {
                 "t0": fit_res["t0"],
+                "t0_err": fit_res["t0_err"],
                 "alpha": fit_res["alpha"],
+                "alpha_err": fit_res["alpha_err"],
                 "beta": fit_res["beta"],
+                "beta_err": fit_res["beta_err"],
                 "qdc0": fit_res["qdc0"],
+                "qdc0_err": fit_res["qdc0_err"],
                 "gamma": fit_res["gamma"],
+                "gamma_err": fit_res["gamma_err"],
+                "A_eff": fit_res["A_eff"],
+                "A_eff_err": fit_res["A_eff_err"],
+                "Q_pole": fit_res["Q_pole"],
+                "Q_pole_err": fit_res["Q_pole_err"],
                 "sigma_sys": fit_res["sigma_sys"],
                 "chi2_stat_ndf": fit_res["chi2_stat_ndf"],
                 "chi2_tot_ndf": fit_res["chi2_tot_ndf"],
@@ -726,6 +839,24 @@ def fit_file(
                 "qdc_limits": fit_res["qdc_limits"],
                 "alignment_d": fit_res["alignment_d"],
                 "alignment_d_err": fit_res["alignment_d_err"],
+                "errors": {
+                    "t0": fit_res["t0_err"],
+                    "alpha": fit_res["alpha_err"],
+                    "beta": fit_res["beta_err"],
+                    "qdc0": fit_res["qdc0_err"],
+                    "gamma": fit_res["gamma_err"],
+                    "A_eff": fit_res["A_eff_err"],
+                    "Q_pole": fit_res["Q_pole_err"],
+                    "d": fit_res["alignment_d_err"],
+                },
+                "stat_errors": {
+                    "t0": fit_res["t0_stat_err"],
+                    "alpha": fit_res["alpha_stat_err"],
+                    "beta": fit_res["beta_stat_err"],
+                    "qdc0": fit_res["qdc0_stat_err"],
+                    "gamma": fit_res["gamma_stat_err"],
+                },
+                "cov_matrix": fit_res["cov_matrix"],
             }
             summary_alignment[ref][ch_name] = [fit_res["alignment_d"], fit_res["alignment_d_err"]]
 
@@ -743,12 +874,14 @@ def fit_file(
                 c.Close()
 
     # Build Global Summary Directories
-    if save_canvas and (summary_tw["DS"] or summary_tw["SF"]):
+    if save_canvas and any(summary_tw[r] for r in ("DS", "SF", "DS_unified", "SF_unified")):
         sum_root_dir = f.GetDirectory("Summary")
         if not sum_root_dir:
             sum_root_dir = f.mkdir("Summary")
 
-        for ref in ("DS", "SF"):
+        for ref in ("DS", "SF", "DS_unified", "SF_unified"):
+            if not summary_tw[ref]:
+                continue
             ref_hists = build_global_timewalk_summaries(summary_tw, ref=ref, run_nr=run_nr)
             if not ref_hists:
                 continue
@@ -762,6 +895,7 @@ def fit_file(
     f.Close()
 
     if is_network:
+        os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
         shutil.copyfile(work_file, target_path)
         os.remove(work_file)
 
@@ -791,7 +925,7 @@ def fit_file(
 
     # Summary statistics for timewalk parameters
     summary_stats = {}
-    for ref in ("DS", "SF"):
+    for ref in ("DS", "SF", "DS_unified", "SF_unified"):
         c_dict = summary_tw.get(ref, {})
         n_c = len(c_dict)
         if n_c > 0:
@@ -811,11 +945,38 @@ def fit_file(
         "run": run_nr,
         "category": category,
         "timewalk": summary_tw,
+        "timewalk_individual": {
+            "DS": summary_tw.get("DS", {}),
+            "SF": summary_tw.get("SF", {}),
+        },
+        "timewalk_unified": {
+            "DS": summary_tw.get("DS_unified", {}),
+            "SF": summary_tw.get("SF_unified", {}),
+        },
         "alignment": summary_alignment,
         "summary": summary_stats,
     }
     if cscint_constants:
         out_data["cscint"] = cscint_constants
+
+    # Load and embed subsystem cscint constants if available
+    subsystem_constants = {}
+    subsys_cand = [
+        subsystem_cscint_file,
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json"
+    ]
+    for spth in subsys_cand:
+        if spth and os.path.exists(spth):
+            try:
+                with open(spth, "r") as sf:
+                    subsystem_constants = json.load(sf)
+                if verbose:
+                    print(f" ~ [Run {run_nr}] Embedded subsystem c_scint from: {spth}", flush=True)
+                break
+            except Exception:
+                continue
+    if subsystem_constants:
+        out_data["subsystem_cscint"] = subsystem_constants
 
     return out_data
 
@@ -866,6 +1027,9 @@ def main():
     parser.add_argument("--cscint-dir", type=str, default="/eos/user/i/idioniso/Timing/cscint/fits",
                         help="Directory containing run<RUN>_cscint.json constants to embed (default: /eos/user/i/idioniso/Timing/cscint/fits)")
     parser.add_argument("--cscint-file", type=str, default=None, help="Explicit path to single c_scint JSON file")
+    parser.add_argument("--subsystem-cscint", dest="subsystem_cscint_file", type=str,
+                        default="/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
+                        help="Path to JSON file defining subsystem unified c_scint constants")
     parser.add_argument("--no-canvas", dest="save_canvas", action="store_false", default=True,
                         help="Do not store fit canvases and TF1 in the output ROOT file")
     parser.add_argument("--palette", type=str, default="jet", choices=["jet", "plasma", "rainbow", "viridis"],
@@ -889,6 +1053,7 @@ def main():
             output_path=out_root,
             cscint_file=args.cscint_file,
             cscint_dir=args.cscint_dir,
+            subsystem_cscint_file=args.subsystem_cscint_file,
             save_canvas=args.save_canvas,
             palette=args.palette,
             qdc_min=args.qdc_min,
@@ -902,10 +1067,14 @@ def main():
                 json.dump(res, jf, indent=2)
             n_ds = len(res["timewalk"].get("DS", {}))
             n_sf = len(res["timewalk"].get("SF", {}))
+            n_ds_uni = len(res["timewalk"].get("DS_unified", {}))
+            n_sf_uni = len(res["timewalk"].get("SF_unified", {}))
             print(f"[SUCCESS] Saved consolidated calibration constants to: {out_json}")
-            print(f"  -> DS: {n_ds} channels fitted, SF: {n_sf} channels fitted.")
+            print(f"  -> DS: {n_ds} (uni: {n_ds_uni}), SF: {n_sf} (uni: {n_sf_uni}) channels fitted.")
             if "cscint" in res:
-                print(f"  -> Successfully embedded c_scint constants from JSON.")
+                print(f"  -> Successfully embedded individual c_scint constants.")
+            if "subsystem_cscint" in res:
+                print(f"  -> Successfully embedded subsystem c_scint constants.")
             if args.save_canvas:
                 target_written = out_root if out_root else args.input
                 print(f"[SUCCESS] Saved fit canvases and summary QA distributions into ROOT file: {target_written}")

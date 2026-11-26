@@ -30,8 +30,9 @@ fi
 
 IN_DIR="${PARTS_BASE}/${CAT}/run${RUN}"
 OUT_FILE="${OUT_DIR}/run${RUN}.root"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-mkdir -p "${OUT_DIR}"
+mkdir -p "${OUT_DIR}" "${SCRIPT_DIR}/out" "${SCRIPT_DIR}/err" "${SCRIPT_DIR}/log"
 
 # Check existing file if force is not requested
 if [ "${FORCE}" != "1" ] && [ -f "${OUT_FILE}" ]; then

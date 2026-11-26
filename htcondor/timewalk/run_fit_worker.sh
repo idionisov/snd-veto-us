@@ -14,14 +14,17 @@ set -eo pipefail
 RUN="${1:-5119}"
 IN_DIR="${2:-/eos/user/i/idioniso/Timing/timewalk2/runs}"
 OUT_DIR="${3:-/eos/user/i/idioniso/Timing/timewalk2/fits}"
-CSCINT_PATH="${4:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
-OUT_ROOT_DIR="${5:-/eos/user/i/idioniso/Timing/timewalk2/fits_root}"
+CSCINT_DIR="${4:-/eos/user/i/idioniso/Timing/cscint/fits}"
+SUBSYSTEM_CSCINT="${5:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
+OUT_ROOT_DIR="${6:-/eos/user/i/idioniso/Timing/timewalk2/fits_root}"
 SAVE_CANVAS="${SAVE_CANVAS:-1}"
 FORCE="${FORCE:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="/afs/cern.ch/work/i/idioniso/snd-veto-us"
 PY_SCRIPT="${WORK_DIR}/scripts/fit_timewalk.py"
+
+mkdir -p "${OUT_DIR}" "${OUT_ROOT_DIR}" "${SCRIPT_DIR}/out" "${SCRIPT_DIR}/err" "${SCRIPT_DIR}/log"
 
 # 1. Resolve Input File
 INPUT_FILE=""
@@ -96,10 +99,15 @@ if [ "${SAVE_CANVAS}" != "1" ]; then
 fi
 
 CSCINT_OPT=""
-if [ -f "${CSCINT_PATH}" ]; then
-    CSCINT_OPT="--cscint-file ${CSCINT_PATH}"
-elif [ -d "${CSCINT_PATH}" ]; then
-    CSCINT_OPT="--cscint-dir ${CSCINT_PATH}"
+if [ -d "${CSCINT_DIR}" ]; then
+    CSCINT_OPT="--cscint-dir ${CSCINT_DIR}"
+elif [ -f "${CSCINT_DIR}" ]; then
+    CSCINT_OPT="--cscint-file ${CSCINT_DIR}"
+fi
+
+SUBSYS_OPT=""
+if [ -f "${SUBSYSTEM_CSCINT}" ]; then
+    SUBSYS_OPT="--subsystem-cscint ${SUBSYSTEM_CSCINT}"
 fi
 
 ROOT_DIR_OPT=""
@@ -113,6 +121,7 @@ python3 -X faulthandler "${PY_SCRIPT}" \
     -i "${LOCAL_IN}" \
     -o "${LOCAL_OUT_JSON}" \
     ${CSCINT_OPT} \
+    ${SUBSYS_OPT} \
     ${CANVAS_FLAG} \
     ${ROOT_DIR_OPT}
 

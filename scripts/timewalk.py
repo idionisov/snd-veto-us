@@ -127,6 +127,7 @@ def load_run_cscint(
     run_nr: int,
     cscint_file: str = None,
     cscint_dir: str = _DEFAULT_CSCINT_DIR,
+    subsystem_cscint_file: str = "/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
     placeholder: float = 13.5,
     use_subsystem_cscint: bool = False,
     cscint_us: float = 13.82,
@@ -134,16 +135,34 @@ def load_run_cscint(
     cscint_veto: float = 13.05
 ):
     """
-    Loads channel-specific and run-unified c_scint constants from JSON,
-    or returns unified effective constants per subsystem (US, DS, Veto).
-    Returns:
-      specific_cscint: {'DS': {ch: val}, 'SF': {ch: val}} or {'subsystems': {1: veto, 2: us, 3: ds}}
-      unified_cscint:  {'DS': val, 'SF': val}
+    Loads:
+      1. Individual channel c_scint constants from per-run JSON:
+         specific_cscint = {'DS': {ch_key: val}, 'SF': {ch_key: val}}
+      2. Unified subsystem c_scint constants:
+         subsys_map = {1: veto_val, 2: us_val, 3: ds_val} (Veto=13.05, US=13.82, DS=14.71)
     """
+    subsys_map = {1: cscint_veto, 2: cscint_us, 3: cscint_ds}
+    subsys_cand = [
+        subsystem_cscint_file,
+        "/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
+    ]
+    for spth in subsys_cand:
+        if spth and os.path.exists(spth):
+            try:
+                with open(spth, "r") as sf:
+                    sdata = json.load(sf)
+                if "subsystems" in sdata and isinstance(sdata["subsystems"], dict):
+                    c_us = float(sdata["subsystems"].get("US", cscint_us))
+                    c_ds_val = float(sdata["subsystems"].get("DS", cscint_ds))
+                    c_veto = float(sdata["subsystems"].get("Veto", cscint_veto))
+                    subsys_map = {1: c_veto, 2: c_us, 3: c_ds_val}
+                    break
+            except Exception:
+                pass
+
     if use_subsystem_cscint:
-        print(f"[INFO] [Run {run_nr}] Using unified subsystem c_scint constants: US={cscint_us:.2f}, DS={cscint_ds:.2f}, Veto={cscint_veto:.2f} cm/ns", flush=True)
-        subsys_map = {1: cscint_veto, 2: cscint_us, 3: cscint_ds}
-        return {"subsystems": subsys_map, "DS": {}, "SF": {}}, {"DS": cscint_ds, "SF": cscint_veto}
+        print(f"[INFO] [Run {run_nr}] Using unified subsystem c_scint constants exclusively: US={subsys_map[2]:.2f}, DS={subsys_map[3]:.2f}, Veto={subsys_map[1]:.2f} cm/ns", flush=True)
+        return {"DS": {}, "SF": {}}, subsys_map
 
     candidates = []
     if cscint_file and os.path.exists(cscint_file):
@@ -169,70 +188,47 @@ def load_run_cscint(
         if os.path.exists(pth):
             try:
                 with open(pth, "r") as f:
-                    data = json.load(f)
-                loaded_path = pth
-                break
+                    content = json.load(f)
+                if "DS" in content or "SF" in content or "cscint" in content:
+                    data = content
+                    loaded_path = pth
+                    break
             except Exception:
                 continue
 
     specific = {"DS": {}, "SF": {}}
-    unified = {"DS": placeholder, "SF": placeholder}
 
-    if not data:
-        print(f"[INFO] [Run {run_nr}] No precomputed c_scint file found. Using placeholder: {placeholder:.2f} cm/ns", flush=True)
-        return specific, unified
+    if data:
+        for ref in ("DS", "SF"):
+            if ref in data and isinstance(data[ref], dict):
+                for k, v in data[ref].items():
+                    if isinstance(v, dict) and "c_scint" in v:
+                        val = float(v["c_scint"])
+                    elif isinstance(v, (list, tuple)) and len(v) >= 1:
+                        val = float(v[0])
+                    else:
+                        try:
+                            val = float(v)
+                        except (ValueError, TypeError):
+                            continue
+                    if 5.0 < val < 30.0:
+                        specific[ref][k] = val
 
-    # Auto-detect if JSON is a subsystem-unified configuration file
-    if "subsystems" in data and isinstance(data["subsystems"], dict):
-        c_us = float(data["subsystems"].get("US", cscint_us))
-        c_ds_val = float(data["subsystems"].get("DS", cscint_ds))
-        c_veto = float(data["subsystems"].get("Veto", cscint_veto))
-        print(f"[INFO] [Run {run_nr}] Loaded unified subsystem c_scint constants from {loaded_path}: US={c_us:.2f}, DS={c_ds_val:.2f}, Veto={c_veto:.2f} cm/ns", flush=True)
-        subsys_map = {1: c_veto, 2: c_us, 3: c_ds_val}
-        return {"subsystems": subsys_map, "DS": {}, "SF": {}}, {"DS": c_ds_val, "SF": c_veto}
+            elif "cscint" in data and isinstance(data["cscint"], dict):
+                for k, v in data["cscint"].items():
+                    val = float(v[0]) if isinstance(v, (list, tuple)) else float(v)
+                    if 5.0 < val < 30.0:
+                        specific[ref][k] = val
 
-    for ref in ("DS", "SF"):
-        if ref in data and isinstance(data[ref], dict):
-            for k, v in data[ref].items():
-                if isinstance(v, dict) and "c_scint" in v:
-                    val = float(v["c_scint"])
-                elif isinstance(v, (list, tuple)) and len(v) >= 1:
-                    val = float(v[0])
-                else:
-                    try:
-                        val = float(v)
-                    except (ValueError, TypeError):
-                        continue
-                if 5.0 < val < 30.0:
-                    specific[ref][k] = val
+        if not specific["SF"] and specific["DS"]:
+            specific["SF"] = dict(specific["DS"])
 
-        # Fallback to general 'cscint' dictionary if reference key absent
-        elif "cscint" in data and isinstance(data["cscint"], dict):
-            for k, v in data["cscint"].items():
-                val = float(v[0]) if isinstance(v, (list, tuple)) else float(v)
-                if 5.0 < val < 30.0:
-                    specific[ref][k] = val
+        print(f"[INFO] [Run {run_nr}] Loaded individual SiPM c_scint from {loaded_path}: DS={len(specific['DS'])} channels, SF={len(specific['SF'])} channels.", flush=True)
+    else:
+        print(f"[INFO] [Run {run_nr}] No individual SiPM c_scint file found. Subsystem speeds will be used as fallback.", flush=True)
 
-        # Determine unified speed
-        if "summary" in data and ref in data["summary"] and "weighted_mean" in data["summary"][ref]:
-            w_mean = float(data["summary"][ref]["weighted_mean"])
-            if 5.0 < w_mean < 30.0:
-                unified[ref] = w_mean
-            else:
-                vals = list(specific[ref].values())
-                unified[ref] = float(np.median(vals)) if vals else placeholder
-        else:
-            vals = list(specific[ref].values())
-            unified[ref] = float(np.median(vals)) if vals else placeholder
-
-    # If SF constants are empty, fall back to DS constants (matching TimeWalk.py logic)
-    if not specific["SF"] and specific["DS"]:
-        print(f"[INFO] [Run {run_nr}] c_scint constants for SF empty; falling back to DS bar speeds ({len(specific['DS'])} channels).", flush=True)
-        specific["SF"] = dict(specific["DS"])
-        unified["SF"] = unified["DS"]
-
-    print(f"[INFO] [Run {run_nr}] Loaded c_scint constants from {loaded_path}: DS={len(specific['DS'])} (unified={unified['DS']:.2f} cm/ns), SF={len(specific['SF'])} (unified={unified['SF']:.2f} cm/ns)", flush=True)
-    return specific, unified
+    print(f"[INFO] [Run {run_nr}] Unified subsystem c_scint constants: Veto={subsys_map[1]:.2f}, US={subsys_map[2]:.2f}, DS={subsys_map[3]:.2f} cm/ns", flush=True)
+    return specific, subsys_map
 
 
 def run_worker(
@@ -244,7 +240,8 @@ def run_worker(
     windows_json=None,
     cscint_dir=_DEFAULT_CSCINT_DIR,
     cscint_file=None,
-    include_unified=False,
+    subsystem_cscint_file="/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
+    include_unified=True,
     require_veto_scifi1=True,
     use_subsystem_cscint=False,
     cscint_us=13.82,
@@ -337,10 +334,11 @@ def run_worker(
     category = get_run_category(run_nr)
 
     # Load c_scint constants
-    specific_cscint, unified_cscint = load_run_cscint(
+    specific_cscint, subsys_map = load_run_cscint(
         run_nr=run_nr,
         cscint_file=cscint_file,
         cscint_dir=cscint_dir,
+        subsystem_cscint_file=subsystem_cscint_file,
         use_subsystem_cscint=use_subsystem_cscint,
         cscint_us=cscint_us,
         cscint_ds=cscint_ds,
@@ -731,13 +729,12 @@ def run_worker(
                 else:
                     sign = 1.0 if sipm_num < 8 else -1.0
 
-                # Resolve c_scint speed (subsystem-unified or channel-specific)
-                if "subsystems" in specific_cscint:
-                    c_ds = specific_cscint["subsystems"].get(s, unified_cscint["DS"])
-                    c_sf = specific_cscint["subsystems"].get(s, unified_cscint["SF"])
-                else:
-                    c_ds = specific_cscint["DS"].get(ch_key, unified_cscint["DS"])
-                    c_sf = specific_cscint["SF"].get(ch_key, unified_cscint["SF"])
+                # Unified subsystem speed for subsystem s (1=Veto, 2=US, 3=DS)
+                c_uni = subsys_map.get(s, 14.0)
+
+                # Channel-specific speed (individual SiPM fit, fallback to subsystem speed)
+                c_ds = specific_cscint["DS"].get(ch_key, c_uni)
+                c_sf = specific_cscint["SF"].get(ch_key, c_uni)
 
                 # A. DS Reference TimeWalk
                 if has_valid_ds:
@@ -746,8 +743,8 @@ def run_worker(
                         dt_ds = tds0_val - t_tof
                         get_hist(ch_key, "dtvqdc-DS").Fill(qdc, dt_ds)
 
-                    if include_unified and unified_cscint["DS"] and unified_cscint["DS"] > 0:
-                        t_tof_uni = t_raw + sign * (dx / unified_cscint["DS"])
+                    if include_unified and c_uni and c_uni > 0:
+                        t_tof_uni = t_raw + sign * (dx / c_uni)
                         dt_ds_uni = tds0_val - t_tof_uni
                         get_hist(ch_key, "dtvqdc-DS-unified").Fill(qdc, dt_ds_uni)
 
@@ -758,12 +755,16 @@ def run_worker(
                         dt_sf = tsf0_val - t_tof
                         get_hist(ch_key, "dtvqdc-SF").Fill(qdc, dt_sf)
 
-                    if include_unified and unified_cscint["SF"] and unified_cscint["SF"] > 0:
-                        t_tof_uni = t_raw + sign * (dx / unified_cscint["SF"])
+                    if include_unified and c_uni and c_uni > 0:
+                        t_tof_uni = t_raw + sign * (dx / c_uni)
                         dt_sf_uni = tsf0_val - t_tof_uni
                         get_hist(ch_key, "dtvqdc-SF-unified").Fill(qdc, dt_sf_uni)
 
     # 6. Write channel histograms into structured temp ROOT file
+    out_dir_temp = os.path.dirname(os.path.abspath(temp_output))
+    if out_dir_temp:
+        os.makedirs(out_dir_temp, exist_ok=True)
+
     out_f = ROOT.TFile.Open(temp_output, "RECREATE")
     for ch_key, hists in hist_cache.items():
         ch_dir = out_f.mkdir(ch_key)
@@ -865,11 +866,24 @@ def parse_args():
         help="Direct path to single c_scint JSON file"
     )
     parser.add_argument(
+        "--subsystem-cscint",
+        dest="subsystem_cscint_file",
+        type=str,
+        default="/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json",
+        help="Path to JSON file defining subsystem unified c_scint constants"
+    )
+    parser.add_argument(
         "--include-unified",
         dest="include_unified",
         action="store_true",
-        default=False,
-        help="Also store unified c_scint histograms (dtvqdc-DS-unified, dtvqdc-SF-unified)"
+        default=True,
+        help="Store unified c_scint histograms (dtvqdc-DS-unified, dtvqdc-SF-unified) alongside channel-specific ones (default: True)"
+    )
+    parser.add_argument(
+        "--no-unified",
+        dest="include_unified",
+        action="store_false",
+        help="Disable generating unified c_scint histograms"
     )
     parser.add_argument(
         "--no-veto-scifi1", "--no-veto-scifi",
@@ -939,6 +953,7 @@ def main():
             windows_json=args.windows_json,
             cscint_dir=args.cscint_dir,
             cscint_file=args.cscint_file,
+            subsystem_cscint_file=args.subsystem_cscint_file,
             include_unified=args.include_unified,
             require_veto_scifi1=args.require_veto_scifi1,
             use_subsystem_cscint=args.use_subsystem_cscint,
@@ -1044,6 +1059,8 @@ def main():
                 worker_cmd.extend(["--cscint-dir", os.path.abspath(args.cscint_dir)])
             if args.cscint_file:
                 worker_cmd.extend(["--cscint-file", os.path.abspath(args.cscint_file)])
+            if args.subsystem_cscint_file:
+                worker_cmd.extend(["--subsystem-cscint", os.path.abspath(args.subsystem_cscint_file)])
             if args.include_unified:
                 worker_cmd.append("--include-unified")
             if args.geo_file:

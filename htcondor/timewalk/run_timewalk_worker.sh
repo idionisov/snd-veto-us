@@ -18,12 +18,14 @@ PARTITION="${2:-0}"
 CATEGORY="${3:-catII}"
 OUT_BASE="${4:-/eos/user/i/idioniso/Timing/timewalk2/parts}"
 CSCINT_DIR="${5:-/eos/user/i/idioniso/Timing/cscint/fits}"
-CSCINT_FILE="${6:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
+SUBSYSTEM_CSCINT="${6:-/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json}"
 FORCE="${FORCE:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${OUT_BASE}/${CATEGORY}/run${RUN}"
 TARGET_FILE="${TARGET_DIR}/part_${PARTITION}.root"
+
+mkdir -p "${TARGET_DIR}" "${SCRIPT_DIR}/out" "${SCRIPT_DIR}/err" "${SCRIPT_DIR}/log"
 
 echo "======================================================================"
 echo " SND@LHC HTCondor Worker: Time-Walk (ToF Corrected dt vs QDC)"
@@ -33,6 +35,7 @@ echo " Partition:   ${PARTITION}"
 echo " Category:    ${CATEGORY}"
 echo " Destination: ${TARGET_FILE}"
 echo " c_scint Dir: ${CSCINT_DIR}"
+echo " Unified cfg: ${SUBSYSTEM_CSCINT}"
 echo " Flavour:     workday"
 echo " Time:        $(date '+%Y-%m-%d %H:%M:%S')"
 echo "======================================================================"
@@ -56,35 +59,35 @@ else
     exit 1
 fi
 
-# 3. Resolve c_scint constants file (auto-navigate to run JSON)
-CSCINT_OPT=""
-if [ -n "${CSCINT_FILE}" ] && [ -f "${CSCINT_FILE}" ]; then
-    CSCINT_OPT="--cscint-file ${CSCINT_FILE}"
-    echo "[INFO] Using explicitly provided c_scint file: ${CSCINT_FILE}"
-else
-    # Auto-navigate
-    RUN_PADDED=$(printf "%06d" "${RUN}")
-    FOUND_FILE=""
-    for cand in \
-        "${CSCINT_DIR}/run${RUN}_cscint.json" \
-        "${CSCINT_DIR}/run${RUN_PADDED}_cscint.json" \
-        "${CSCINT_DIR}/run_${RUN}_cscint.json" \
-        "${CSCINT_DIR}/run${RUN}.json"; do
-        if [ -f "${cand}" ]; then
-            FOUND_FILE="${cand}"
-            break
-        fi
-    done
-
-    if [ -n "${FOUND_FILE}" ]; then
-        CSCINT_OPT="--cscint-file ${FOUND_FILE}"
-        echo "[INFO] Automatically resolved c_scint constants: ${FOUND_FILE}"
-    elif [ -d "${CSCINT_DIR}" ]; then
-        CSCINT_OPT="--cscint-dir ${CSCINT_DIR}"
-        echo "[INFO] Run-specific JSON not found directly; passing directory: ${CSCINT_DIR}"
-    else
-        echo "[WARNING] c_scint directory ${CSCINT_DIR} not found; falling back to placeholder speed."
+# 3. Resolve individual and subsystem c_scint constants
+RUN_PADDED=$(printf "%06d" "${RUN}")
+FOUND_FILE=""
+for cand in \
+    "${CSCINT_DIR}/run${RUN}_cscint.json" \
+    "${CSCINT_DIR}/run${RUN_PADDED}_cscint.json" \
+    "${CSCINT_DIR}/run_${RUN}_cscint.json" \
+    "${CSCINT_DIR}/run${RUN}.json"; do
+    if [ -f "${cand}" ]; then
+        FOUND_FILE="${cand}"
+        break
     fi
+done
+
+CSCINT_OPT=""
+if [ -n "${FOUND_FILE}" ]; then
+    CSCINT_OPT="--cscint-file ${FOUND_FILE}"
+    echo "[INFO] Individual SiPM c_scint constants: ${FOUND_FILE}"
+elif [ -d "${CSCINT_DIR}" ]; then
+    CSCINT_OPT="--cscint-dir ${CSCINT_DIR}"
+    echo "[INFO] Individual SiPM c_scint directory: ${CSCINT_DIR}"
+else
+    echo "[WARNING] Individual c_scint directory ${CSCINT_DIR} not found; falling back to subsystem constants."
+fi
+
+SUBSYS_OPT=""
+if [ -f "${SUBSYSTEM_CSCINT}" ]; then
+    SUBSYS_OPT="--subsystem-cscint ${SUBSYSTEM_CSCINT}"
+    echo "[INFO] Subsystem unified c_scint constants: ${SUBSYSTEM_CSCINT}"
 fi
 
 # 4. Create local scratch space
@@ -106,6 +109,7 @@ python3 -X faulthandler "${PY_SCRIPT}" \
     --break 0 \
     --windows-json "${WINDOWS_JSON}" \
     ${CSCINT_OPT} \
+    ${SUBSYS_OPT} \
     --include-unified \
     -o "${TEMP_OUT}"
 

@@ -14,10 +14,10 @@ flavour                 = $(flavour:workday)
 args_file               = $(args_file:$(base_dir)/args_partitions_catII_max20.txt)
 out_base                = $(out_base:/eos/user/i/idioniso/Timing/timewalk2/parts)
 cscint_dir              = $(cscint_dir:/eos/user/i/idioniso/Timing/cscint/fits)
-cscint_file             = $(cscint_file:/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json)
+subsystem_cscint        = $(subsystem_cscint:/afs/cern.ch/work/i/idioniso/snd-veto-us/config/subsystem_cscint.json)
 
 executable              = $(base_dir)/run_timewalk_worker.sh
-arguments               = $(run) $(partition) $(category) $(out_base) $(cscint_dir) $(cscint_file)
+arguments               = $(run) $(partition) $(category) $(out_base) $(cscint_dir) $(subsystem_cscint)
 environment             = "FORCE=$(force:0)"
 
 output                  = $(base_dir)/out/timewalk_run$(run)_part$(partition)_$(ClusterId)_$(ProcId).out
